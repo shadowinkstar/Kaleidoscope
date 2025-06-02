@@ -1,56 +1,66 @@
 EXTRACT_PERSON_PROMPT = """
-You are a helpful assistant that extracts the character's information from the given novel.
+你是一位擅长提取小说角色信息的助手。
 
-The novel is:
-{text}
-Please return the result in the following format:
-```json 
-[
-  {{
-    "name": "the character name",
-    "description": "the detailed description of the character"
-  }}
-]
-```
-Your result:
-"""
-
-GENERATE_SCRIPRT_PROMPT = """
-You are a helpful assistant that generates a script for a novel. The script use similar Ren'Py syntax. The script should be in the following format:
-
-```
-<scene>DETAILED SCENE DESCRIPTION</scene>
-<person>PERSON EMOTION OR ACTION</person>
-"FIXED PERSON NAME" "PERSON DIALOGUE"
-"PERSON PSYCHOLOGICAL OR ENVIRONMENT DESCRIPTION"
-<person>OTHER PERSON EMOTION | ACTION</person>
-"OTHER PERSON NAME" "OTHER PERSON DIALOGUE"
-...
-<scene>OTHER DEFERENT DETAILED SCENE DESCRIPTION</scene>
-<person>PERSON EMOTION OR ACTION</person>
-"FIXED PERSON NAME" "PERSON DIALOGUE"
-"PERSON PSYCHOLOGICAL OR ENVIRONMENT DESCRIPTION"
-<person>OTHER PERSON EMOTION OR ACTION</person>
-"OTHER PERSON NAME" "OTHER PERSON DIALOGUE"
-...
-```
-
-RULES:
-1. Each line of the dialogue script represents a conversation or narration of a character.
-2. The dialogue is expressed as a string enclosed by two quotation marks, the first one represents the character name, and the second one represents the character dialogue.
-3. The narration is expressed as a separate string, without indicating the narration, etc.
-4. The dialogue script generally needs to be written in the order of the novel, and the content should not be changed or omitted.
-5. When a large scene changes, it is necessary to add a scene tag before the dialogue of the scene change.
-6. When the character image changes greatly, it is necessary to add a character tag before the character speaks.
-7. Use the language used in the novel.
-
-Use the fixed character names from the given list:
+由于小说文本很长，因此我对小说内容进行了分段处理，所以你需要结合已经提取的角色信息（person_info）来整理新的角色信息。
+角色信息包含角色的姓名，这个姓名是角色的唯一标识，因此你要仔细判断角色的身份；还有一个角色的详细描述，这个描述的作用是
+用来生成角色的图片形象，因此需要整理其外貌特征、性格特点、居住环境以及其余能够影响角色形象的信息，不需要过多描述其余无关信息。
+在文本中人物没有明确的名字时，你可以使用角色的某些特征来指代其名称，如职位、衣着等名词，但要有清晰的人物描述，不要遗漏关键角色！！！
+已知角色 (person_info)：  
 {person_list}
 
-The novel is:
-```
+你需要参考的小说内容：  
 {text}
+
+若发现**新角色**（即未出现在 person_info 中）或者有老角色的信息更新，请按下列 JSON 格式返回：
+
+```json
+[
+  {{
+    "name": "角色姓名",
+    "description": "角色的详细描述"
+  }}
+]
+若没有新角色或者角色信息更新，请返回空列表 
+```json
+[]
 ```
-Your finally Chinese script:
+
+请直接输出你的结果：
 """
 
+GENERATE_SCRIPT_PROMPT = """
+你是一位擅长将小说改写为类 Ren'Py 脚本的助手。
+请你按照以下规则进行改写：  
+1. 按小说原始顺序编写，不得增删情节。  
+2. 每行仅包含一句对白或一段叙述：  
+   • 对白格式需要写为用空格隔开两个字符串 "角色名" "对白内容"
+   • 叙述格式只需要使用一个字符串 "内容"
+3. 如果小说中出现了比较大的场景切换，例如人物登上交通工具、进入某个商店或者突然下雨等，使用 <scene> 标签详细描写出新的场景，但要注意场景切换的自然过渡。
+4. 角色形象显著变化用 <person> 标签标注角色的变化，注意这里的标签内容有两个部分，其一是角色的唯一姓名，其二是角色状态的一个简短标签，如 <person>张三 伤心</person>，表示张三需要做出伤心的表情，<person>张三 手部受伤</person>说明张三的手部受伤。
+5. 请注意角色的姓名是唯一的，你可以使用的角色姓名仅限下方列表：
+
+{person_list}
+
+请按照如下格式输出脚本：
+
+<scene>小说故事发生场景的详细描写</scene>
+<person>角色姓名 简短标签</person>
+"固定角色名" "角色对白"
+"角色的心理或环境描写等旁白内容"
+<person>另一角色姓名 简短标签</person>
+"另一角色名" "另一角色对白"
+……
+<scene>小说故事发生场景发生大的变化，对新场景的详细描写</scene>
+<person>角色姓名 简短标签</person>（尽量使用之前已经出现过的标签）
+"固定角色名" "角色对白"
+"角色的心理或环境描写等旁白内容"
+<person>另一角色姓名 简短标签</person>
+"另一角色名" "另一角色对白"
+……
+
+
+小说原文：
+{text}
+
+你最终输出的脚本为：
+"""
