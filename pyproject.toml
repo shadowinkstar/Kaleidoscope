@@ -2,22 +2,20 @@
 name = "kaleidoscope"
 version = "0.1.0"
 description = "一个将文字小说转化为视觉小说的AI项目"
-authors = [
-    {name = "RenXuan",email = "3292998792@qq.com"}
-]
 readme = "README.md"
-requires-python = ">=3.10,<4.0"
+requires-python = ">=3.10"
 dependencies = [
-    "langchain (>=0.3.15,<0.4.0)",
-    "langchain-openai (>=0.3.2,<0.4.0)",
-    "rich (>=13.9.4,<14.0.0)",
-    "bs4 (>=0.0.2,<0.0.3)",
-    "loguru (>=0.7.3,<0.8.0)",
-    "python-dotenv (>=1.0.1,<2.0.0)",
-    "langchain-google-genai (>=2.0.9,<3.0.0)"
+    "bs4>=0.0.2",
+    "langchain>=0.3.25",
+    "langchain-openai>=0.3.18",
+    "langchain-text-splitters>=0.3.8",
+    "loguru>=0.7.3",
+    "lxml>=5.4.0",
+    "nvidia-cuda-runtime-cu12>=12.9.37",
+    "nvidia-cudnn-cu12>=9.10.1.4",
+    "nvidia-cufft-cu12>=11.4.0.6",
+    "onnxruntime>=1.22.0",
+    "python-dotenv>=1.1.0",
+    "rembg[gpu]>=2.0.66",
+    "rich>=14.0.0",
 ]
-
-
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
