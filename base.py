@@ -210,7 +210,7 @@ def generate_script(chapter_document: Document, llm: ChatOpenAI, person_list: Li
     """
     prompt = PromptTemplate.from_template(GENERATE_SCRIPT_PROMPT)
     chain = prompt | llm | StrOutputParser()
-    result = chain.invoke({"text": chapter_document, "person_list": [person.name for person in person_list]})
+    result = chain.invoke({"text": chapter_document.page_content, "person_list": [person.name for person in person_list]})
     logger.info(f"{chapter_document.page_content[:10].strip()}...{chapter_document.page_content[-10:].strip()}提取脚本结果：\n{result}")
     return result
 
