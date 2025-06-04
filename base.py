@@ -18,8 +18,10 @@ from img import run_comfy_workflow, run_img2img_workflow
 load_dotenv()
 
 llm = ChatOpenAI(
-    model="qwen3-235b-a22b",
+    # model="qwen3-235b-a22b",
     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+    model="deepseek-v3",
+    # base_url="https://api.studio.nebius.com/v1/",
     max_retries=2,
     temperature=0.0,
     max_completion_tokens=8192,
@@ -138,7 +140,7 @@ def split_chapter(chapters: List[Chapter], chunk_size: int = 4000, overlap: int 
 class Person(BaseModel):
     """小说人物"""
     name: str = Field(description="对话脚本中使用的人物名称，保证唯一性")
-    description: str = Field(description="对于人物形象的全面描述，")
+    description: str = Field(description="对于人物形象的全面描述")
     seed: int = Field(default=42, description="文生图的随机种子，保证每次生成图像的结果唯一，默认为神秘数字42")
     novel_name: str = Field(description="人物所属小说名称")
     labels: Optional[List[str]] = Field(default=[], description="人物标签列表，用于标识人物的特征或身份")
@@ -201,16 +203,18 @@ def generate_person(chapter_document: Document, llm: ChatOpenAI, person_list: Li
                         break
     return result_person_list
 
-def generate_script(chapter_document: Document, llm: ChatOpenAI, person_list: List[Person]) -> str:
+def generate_script(chapter_document: Document, llm: ChatOpenAI, person_list: List[Person], previous_script: str) -> str:
     """
     根据小说章节内容生成对话脚本，并返回对话脚本
     :param chapter_document: 小说章节内容
     :param llm: 使用的LLM模型
+    :param person_list: 已经识别的人物列表
+    :param previous_script: 上一章节的对话脚本内容，用于保证对话脚本的连续性
     :return: 对话脚本
     """
     prompt = PromptTemplate.from_template(GENERATE_SCRIPT_PROMPT)
     chain = prompt | llm | StrOutputParser()
-    result = chain.invoke({"text": chapter_document.page_content, "person_list": [person.name for person in person_list]})
+    result = chain.invoke({"text": chapter_document.page_content, "person_list": [person.name for person in person_list], "previous_script": previous_script})
     logger.info(f"{chapter_document.page_content[:10].strip()}...{chapter_document.page_content[-10:].strip()}提取脚本结果：\n{result}")
     return result
 
@@ -252,7 +256,8 @@ def extract_info_from_script(script_path: str, person_path: str, script: str = "
             # 如果存在，则把人物标签放在人物信息中
             for person in person_list:
                 if person["name"] == name:
-                    person["labels"].append(label)
+                    if label not in person["labels"]:
+                        person["labels"].append(label)
                     break
     print(f"冲突人物信息：{conflit_persons}")
     print(f"当前人物信息：{person_list}")
@@ -286,31 +291,53 @@ def image_generator_agent(persons: List[dict]) -> List[str]:
             ]
         )
         print(f"正在为人物 {person['name']} 生成提示词...")
-        response = vision_llm.invoke([text2img_message])
+        response = llm.invoke([text2img_message])
         print(f"人物 {person['name']} 的提示词生成结果：{response.content}")
         result = extract_json(response)
         print(f"正在为人物 {person['name']} 生成立绘...")
         img_path = run_comfy_workflow(positive=result["positive"], negative=result["negative"])
-        base64_image = encode_image(img_path)
-        img2img_message = HumanMessage(
-            content=[
-                {"type": "text", "text": f"下面的图片是一个人物立绘，请查看这张图片是否符合如下人物描述：{json.dumps(person)}\n如果符合，请回复'是'，如果不符合，请根据人物描述修改提示词，使用\
-                如下的JSON格式返回提示词：```json\n{{'positive': '正面提示词，使用逗号分隔的多个句子', 'negative': '负面提示词，使用逗号分隔的多个句子'}}\n```\n我将使用这个提示词对图片进行修改。"},
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}},
-            ]
-        )
-        response = vision_llm.invoke([img2img_message])
-        print(f"人物 {person['name']} 的立绘检查结果：{response.content}")
-        if "是" in response.content:
-            print(f"人物 {person['name']} 的立绘生成成功，图片路径为：{img_path}")
-        else:
-            # 重新生成人物立绘
+        person_img_path = img_path.with_name(f"{person['name']}.png")
+        img_path.rename(person_img_path)
+        print(f"人物 {person['name']} 的立绘生成成功，图片路径为：{person_img_path}")
+        # 开始针对不同的label生成一系列立绘
+        for label in person["labels"][:3]:
+            print(f"正在为人物 {person['name']} 生成标签 {label} 的提示词...")
+            text2img_message = HumanMessage(
+                content=[
+                    {"type": "text", "text": f"我会给你提供一个人物的信息，然后你需要结合提供的人物信息与人物现在的标签生成一个使用FLUX-dev模型的图生图提示词，这个提示词应当具备正面提示词与负面提示词两个部分的内容，以更好地把现有图片立绘修改为符合人物标签描述的立绘。\
+                        请使用简洁清晰的英文短句来构建提示词，注意你要根据人物的标签内容（可能很简短），在原有提示词的基础上设计一套新的提示词，重心放在人物如何与标签对应上面，以求更加准确地修改图像；\
+                        而负面提示词尽量使用那些有利于图像生成的常见负面提示词，并且针对人物形象做出适应的改变。请你使用如下的\
+                        JSON格式返回提示词：```json\n{{'positive': '正面提示词，使用逗号分隔的多个句子', 'negative': '负面提示词，使用逗号分隔的多个句子'}}\n```\n，人物的信息如下{json.dumps(person)}，之前生成立绘的提示词为{json.dumps(result)}，生成的人物立绘需要满足新的标签{label}，请在提示词中充分体现这个标签的内容。"}
+                ]
+            )
+            response = llm.invoke([text2img_message])
+            print(f"人物 {person['name']} 标签 {label} 的提示词生成结果：{response.content}")
             result = extract_json(response)
-            update_img_path = run_img2img_workflow(input_image=img_path, positive=result["positive"], negative=result["negative"])
-            print(f"人物 {person['name']} 的立绘修改成功，图片路径为：{update_img_path}")
+            print(f"正在为人物 {person['name']} 标签 {label} 生成立绘...")
+            label_img_path = run_img2img_workflow(input_image=str(person_img_path.resolve()), positive=result["positive"], negative=result["negative"])
+            person_label_img_path = img_path.with_name(f"{person['name']} {label}.png")
+            label_img_path.rename(person_label_img_path)
+            print(f"人物 {person['name']} 标签 {label} 的立绘生成成功，图片路径为：{person_label_img_path}")
+        # base64_image = encode_image(img_path)
+        # img2img_message = HumanMessage(
+        #     content=[
+        #         {"type": "text", "text": f"下面的图片是一个人物立绘，请查看这张图片是否符合如下人物描述：{json.dumps(person)}\n如果符合，请回复'是'，如果不符合，请根据人物描述修改提示词，使用\
+        #         如下的JSON格式返回提示词：```json\n{{'positive': '正面提示词，使用逗号分隔的多个句子', 'negative': '负面提示词，使用逗号分隔的多个句子'}}\n```\n我将使用这个提示词对图片进行修改。"},
+        #         {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}},
+        #     ]
+        # )
+        # response = vision_llm.invoke([img2img_message])
+        # print(f"人物 {person['name']} 的立绘检查结果：{response.content}")
+        # if "是" in response.content:
+        #     print(f"人物 {person['name']} 的立绘生成成功，图片路径为：{img_path}")
+        # else:
+        #     # 重新生成人物立绘
+        #     result = extract_json(response)
+        #     update_img_path = run_img2img_workflow(input_image=img_path, positive=result["positive"], negative=result["negative"])
+        #     print(f"人物 {person['name']} 的立绘修改成功，图片路径为：{update_img_path}")
 
 if __name__ == "__main__":
-    # file_path = "朝闻道.txt"
+    # file_path = "novels/朝闻道.txt"
     # chapters = split_chapter(parse_novel_txt(path=file_path))
     # # print(chapters)
     # result = ""
@@ -318,14 +345,14 @@ if __name__ == "__main__":
     # for chapter in chapters:
     #     for chunk in chapter.chunks:
     #         person_list = generate_person(chunk, llm, person_list)
-    #         result += generate_script(chunk, llm, person_list)
+    #         result += generate_script(chunk, llm, person_list, previous_script=result)
     # print(f"最终人物：{person_list}")
-    # with open(f"scripts/{file_path.split('.')[0]}_result_{str(int(time.time()))}.txt", "a", encoding="utf-8") as f:
+    # with open(f"scripts/{file_path.split('/')[1].split('.')[0]}_result_{str(int(time.time()))}.txt", "a", encoding="utf-8") as f:
     #     f.write(result)
 
-    # with open(f"scripts/{file_path.split('.')[0]}_person_{str(int(time.time()))}.json", "w", encoding="utf-8") as f:
+    # with open(f"scripts/{file_path.split('/')[1].split('.')[0]}_person_{str(int(time.time()))}.json", "w", encoding="utf-8") as f:
     #     json.dump([person.model_dump() for person in person_list], f, ensure_ascii=False, indent=4)
-    script_path = "scripts/朝闻道_result_1748873516.txt"
-    person_path = "scripts/朝闻道_person_1748873516.json"
+    script_path = "scripts/朝闻道_result_1749052829.txt"
+    person_path = "scripts/朝闻道_person_1749052829.json"
     persons, scenes = extract_info_from_script(script_path, person_path)
-    image_generator_agent(persons[:3])
+    image_generator_agent(persons[:1])

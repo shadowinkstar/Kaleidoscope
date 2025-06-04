@@ -1,6 +1,9 @@
 import json, uuid, time, requests, pathlib
 from typing import Optional
 from rich import print
+from rich.console import Console
+
+console = Console()
 
 def run_comfy_workflow(
     server: str = "http://127.0.0.1:8188",
@@ -50,20 +53,26 @@ def run_comfy_workflow(
     # ---------- 4. 轮询 /history ----------
     t0 = time.time()
     outputs = None
-    while True:
-        hist = requests.get(f"{server}/history/{prompt_id}", timeout=30).json()
-        if hist:
-            if "error" in hist:
-                print("[red][b]ComfyUI /history 报错，流程终止：[/b][/red]")
-                return None
-            if hist[prompt_id].get("status")["status_str"] == "success":
-                print("[green][b]ComfyUI 生成成功！[/b][/green]")
-                outputs = hist[prompt_id].get("outputs", None)
+    timeout = 300 
+    with console.status("[bold cyan]ComfyUI 正在生成，请稍候…[/]", spinner="dots"):
+        while True:
+            hist = requests.get(f"{server}/history/{prompt_id}", timeout=30).json()
+
+            if hist and "error" in hist:
+                console.print("[red][b]ComfyUI /history 报错，流程终止[/b][/red]")
                 break
+
+            if hist and hist[prompt_id]["status"]["status_str"] == "success":
+                outputs  = hist[prompt_id].get("outputs")
+                elapsed  = time.time() - t0        # 计算耗时
+                console.print(f"[green][b]ComfyUI 生成成功！耗时 {elapsed:.1f} 秒[/b][/green]")
+                break
+
             if time.time() - t0 > timeout:
-                print("[red]ComfyUI 生成超时[/red]")
-                return None
-        time.sleep(2)
+                console.print("[red]ComfyUI 生成超时[/red]")
+                break
+
+            time.sleep(0.5)
 
     # ---------- 5. 解析图片文件名（兼容多种结构） ----------
     fname = None
@@ -179,27 +188,39 @@ def run_img2img_workflow(
         print(f"[red][b]提交 /prompt 失败:[/b] {e}")
         return None
 
-    # ---------- 4. 轮询 /history ----------
+        # ---------- 4. 轮询 /history ----------
     t0 = time.time()
     outputs = None
-    while True:
-        try:
-            hist = requests.get(f"{server}/history/{prompt_id}", timeout=30).json()
-            if hist:
-                if "error" in hist:
-                    print("[red][b]ComfyUI /history 报错，流程终止：[/b][/red]")
-                    return None
-                if prompt_id in hist and hist[prompt_id].get("status", {}).get("status_str") == "success":
-                    print("[green][b]ComfyUI 图生图生成成功！[/b][/green]")
-                    outputs = hist[prompt_id].get("outputs", None)
-                    break
-                if time.time() - t0 > timeout:
-                    print("[red]ComfyUI 生成超时[/red]")
-                    return None
-            time.sleep(2)
-        except Exception as e:
-            print(f"[yellow]轮询状态时出错: {e}, 继续等待...[/yellow]")
-            time.sleep(2)
+
+    with console.status("[bold cyan]ComfyUI 正在生成，请稍候…[/]",
+                        spinner="dots"):        # ← Rich 加载动画
+        while True:
+            try:
+                hist = requests.get(f"{server}/history/{prompt_id}",
+                                    timeout=30).json()
+                if hist:
+                    if "error" in hist:
+                        console.print("[red][b]ComfyUI /history 报错，流程终止[/b][/red]")
+                        return None
+
+                    if prompt_id in hist and \
+                       hist[prompt_id].get("status", {}).get("status_str") == "success":
+                        outputs  = hist[prompt_id].get("outputs")
+                        elapsed  = time.time() - t0
+                        console.print(
+                            f"[green][b]ComfyUI 图生图生成成功！耗时 {elapsed:.1f} 秒[/b][/green]"
+                        )
+                        break
+
+                    if time.time() - t0 > timeout:
+                        console.print("[red]ComfyUI 生成超时[/red]")
+                        return None
+
+                time.sleep(0.5)       # 轻量 sleep，动画更顺滑
+            except Exception as e:
+                console.print(f"[yellow]轮询状态时出错: {e}，继续等待...[/yellow]")
+                time.sleep(0.5)
+
 
     # ---------- 5. 解析图片文件名 ----------
     fname = None
@@ -250,38 +271,38 @@ def remove_background(image_path: str, output_path: str):
 
 if __name__ == "__main__":
     # 原有的文生图示例
-    print("[cyan][b]=== 文生图示例 ===[/b][/cyan]")
-    img = run_comfy_workflow(
-        workflow_path="comfyui_workflows/flux.json",  # 官方API导出的json路径
-        positive="a beautiful blonde girl with black eyes, red skirt, long black socks, beautiful",
-        negative="text, watermark",
-        width=768, height=1024,
-        steps=25, seed=123456789,
-        save_node_id="9"  # 保存节点ID（请根据你的workflow实际情况调整）
-    )
+    # print("[cyan][b]=== 文生图示例 ===[/b][/cyan]")
+    # img = run_comfy_workflow(
+    #     workflow_path="comfyui_workflows/flux.json",  # 官方API导出的json路径
+    #     positive="a beautiful blonde girl with black eyes, red skirt, long black socks, beautiful",
+    #     negative="text, watermark",
+    #     width=768, height=1024,
+    #     steps=25, seed=123456789,
+    #     save_node_id="9"  # 保存节点ID（请根据你的workflow实际情况调整）
+    # )
     
     # print("\n" + "="*50 + "\n")
     
-    # # 新增的图生图示例
-    # print("[cyan][b]=== 图生图示例 ===[/b][/cyan]")
-    # img2img_result = run_img2img_workflow(
-    #     workflow_path="comfyui_workflows/flux_img2img.json",  # 使用你提供的JSON工作流
-    #     input_image="example.png",  # 输入图片（需要在ComfyUI的input目录中）
-    #     positive="an beautiful girl who has blonde hair and black eyes, and she has black long socks and red skirts, masterpiece, high quality",
-    #     negative="text, watermark, low quality, blurry",
-    #     steps=20,
-    #     seed=183653249432838,
-    #     cfg=1.0,  # CFG强度
-    #     denoise=0.7,  # 降噪强度，0.7表示保留30%的原图信息
-    #     sampler_name="euler",
-    #     scheduler="normal",
-    #     save_node_id="3"  # 根据JSON，SaveImage节点ID是3
-    # )
+    # 新增的图生图示例
+    print("[cyan][b]=== 图生图示例 ===[/b][/cyan]")
+    img2img_result = run_img2img_workflow(
+        workflow_path="comfyui_workflows/flux_img2img.json",  # 使用你提供的JSON工作流
+        input_image="example.png",  # 输入图片（需要在ComfyUI的input目录中）
+        positive="an beautiful girl who has blonde hair and black eyes, and she has black long socks and red skirts, masterpiece, high quality",
+        negative="text, watermark, low quality, blurry",
+        steps=20,
+        seed=183653249432838,
+        cfg=1.0,  # CFG强度
+        denoise=0.7,  # 降噪强度，0.7表示保留30%的原图信息
+        sampler_name="euler",
+        scheduler="normal",
+        save_node_id="3"  # 根据JSON，SaveImage节点ID是3
+    )
     
-    # if img2img_result:
-    #     print(f"[green][b]图生图处理完成！结果保存在：{img2img_result}[/b][/green]")
-    # else:
-    #     print("[red][b]图生图处理失败！[/b][/red]")
+    if img2img_result:
+        print(f"[green][b]图生图处理完成！结果保存在：{img2img_result}[/b][/green]")
+    else:
+        print("[red][b]图生图处理失败！[/b][/red]")
     
     # 测试背景移除功能
     # print("\n" + "="*50 + "\n")
