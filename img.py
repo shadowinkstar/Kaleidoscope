@@ -8,6 +8,7 @@ console = Console()
 def run_comfy_workflow(
     server: str = "http://127.0.0.1:8188",
     workflow_path: str = "comfyui_workflows/flux.json",
+    prefix: str = "",
     positive: Optional[str] = None,
     negative: Optional[str] = None,
     width: Optional[int] = None,
@@ -95,8 +96,9 @@ def run_comfy_workflow(
     # ---------- 6. 下载图片 ----------
     try:
         img_bytes = requests.get(f"{server}/view?filename={fname}", timeout=60).content
-        out_path = pathlib.Path("outputs") / fname
-        out_path.parent.mkdir(exist_ok=True, parents=True)
+        out_dir = pathlib.Path("outputs") / prefix / "images"
+        out_dir.mkdir(exist_ok=True, parents=True)
+        out_path = out_dir / pathlib.Path(fname).name
         out_path.write_bytes(img_bytes)
         print(f"[green]图片已保存到：{out_path}[/green]")
         return out_path
@@ -107,6 +109,7 @@ def run_comfy_workflow(
 def run_img2img_workflow(
     server: str = "http://127.0.0.1:8188",
     workflow_path: str = "comfyui_workflows/flux_img2img.json",
+    prefix: str = "",
     input_image: Optional[str] = None,  # 输入图片路径
     positive: Optional[str] = None,
     negative: Optional[str] = None,
@@ -125,6 +128,7 @@ def run_img2img_workflow(
     Args:
         server: ComfyUI服务器地址
         workflow_path: 工作流JSON文件路径
+        prefix: 输出目录前缀
         input_image: 输入图片文件名（需要在ComfyUI的input目录中）
         positive: 正面提示词
         negative: 负面提示词
@@ -240,8 +244,9 @@ def run_img2img_workflow(
     # ---------- 6. 下载图片 ----------
     try:
         img_bytes = requests.get(f"{server}/view?filename={fname}", timeout=60).content
-        out_path = pathlib.Path("outputs") / fname
-        out_path.parent.mkdir(exist_ok=True, parents=True)
+        out_dir = pathlib.Path("outputs") / prefix / "images"
+        out_dir.mkdir(exist_ok=True, parents=True)
+        out_path = out_dir / pathlib.Path(fname).name
         out_path.write_bytes(img_bytes)
         print(f"[green]图生图结果已保存到：{out_path}[/green]")
         return out_path
@@ -286,6 +291,7 @@ if __name__ == "__main__":
     # 新增的图生图示例
     print("[cyan][b]=== 图生图示例 ===[/b][/cyan]")
     img2img_result = run_img2img_workflow(
+        prefix="demo",
         workflow_path="comfyui_workflows/flux_img2img.json",  # 使用你提供的JSON工作流
         input_image="example.png",  # 输入图片（需要在ComfyUI的input目录中）
         positive="an beautiful girl who has blonde hair and black eyes, and she has black long socks and red skirts, masterpiece, high quality",
