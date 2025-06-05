@@ -100,5 +100,19 @@
     "_meta": {
       "title": "VAE解码（音频）"
     }
+  },
+  "13": {
+    "inputs": {
+      "filename_prefix": "audio/ComfyUI",
+      "audioUI": "",
+      "audio": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "SaveAudio",
+    "_meta": {
+      "title": "保存音频"
+    }
   }
 }

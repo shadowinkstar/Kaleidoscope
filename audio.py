@@ -14,7 +14,7 @@ def run_audio_workflow(
     steps: Optional[int] = None,
     seed: Optional[int] = None,
     duration: Optional[float] = None,
-    save_node_id: str = "12",
+    save_node_id: str = "13",
     timeout: int = 300,
 ) -> Optional[pathlib.Path]:
     """根据提供的 ComfyUI workflow 生成音频
@@ -28,7 +28,7 @@ def run_audio_workflow(
     steps: 采样步数
     seed: 随机种子
     duration: 音频时长，单位秒
-    save_node_id: 保存节点 ID，用于从 history 中解析文件名
+    save_node_id: 保存节点 ID（默认13，对应 SaveAudio），用于从 history 中解析文件名
     timeout: 轮询超时时间，单位秒
     """
     wf: dict = json.loads(pathlib.Path(workflow_path).read_text(encoding="utf-8"))
@@ -122,7 +122,7 @@ if __name__ == "__main__":
         steps=50,
         seed=657172215808422,
         duration=30.0,
-        save_node_id="12",
+        save_node_id="13",
     )
 
     if audio_result:
