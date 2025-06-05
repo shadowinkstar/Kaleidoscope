@@ -9,12 +9,13 @@ console = Console()
 def run_audio_workflow(
     server: str = "http://127.0.0.1:8188",
     workflow_path: str = "comfyui_workflows/stable_audio.json",
+    prefix: str = "",
     positive: Optional[str] = None,
     negative: Optional[str] = None,
     steps: Optional[int] = None,
     seed: Optional[int] = None,
     duration: Optional[float] = None,
-    save_node_id: str = "12",
+    save_node_id: str = "13",
     timeout: int = 300,
 ) -> Optional[pathlib.Path]:
     """根据提供的 ComfyUI workflow 生成音频
@@ -23,12 +24,13 @@ def run_audio_workflow(
     ----------
     server: ComfyUI 后端地址
     workflow_path: ComfyUI 导出的 workflow JSON 路径
+    prefix: 输出目录前缀
     positive: 正面提示词
     negative: 负面提示词
     steps: 采样步数
     seed: 随机种子
     duration: 音频时长，单位秒
-    save_node_id: 保存节点 ID，用于从 history 中解析文件名
+    save_node_id: 保存节点 ID（默认13，对应 SaveAudio），用于从 history 中解析文件名
     timeout: 轮询超时时间，单位秒
     """
     wf: dict = json.loads(pathlib.Path(workflow_path).read_text(encoding="utf-8"))
@@ -103,8 +105,9 @@ def run_audio_workflow(
 
     try:
         audio_bytes = requests.get(f"{server}/view?filename={fname}", timeout=60).content
-        out_path = pathlib.Path("outputs") / fname
-        out_path.parent.mkdir(exist_ok=True, parents=True)
+        out_dir = pathlib.Path("outputs") / prefix / "audios"
+        out_dir.mkdir(exist_ok=True, parents=True)
+        out_path = out_dir / pathlib.Path(fname).name
         out_path.write_bytes(audio_bytes)
         print(f"[green]音频已保存到：{out_path}[/green]")
         return out_path
@@ -116,13 +119,14 @@ def run_audio_workflow(
 if __name__ == "__main__":
     print("[cyan][b]=== 音频生成示例 ===[/b][/cyan]")
     audio_result = run_audio_workflow(
+        prefix="demo",
         workflow_path="comfyui_workflows/stable_audio.json",
         positive="heaven church electronic dance music",
         negative="",
         steps=50,
         seed=657172215808422,
         duration=30.0,
-        save_node_id="12",
+        save_node_id="13",
     )
 
     if audio_result:
