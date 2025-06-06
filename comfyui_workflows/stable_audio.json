@@ -1,7 +1,7 @@
 {
   "3": {
     "inputs": {
-      "seed": 657172215808422,
+      "seed": 193268560646937,
       "steps": 50,
       "cfg": 4.98,
       "sampler_name": "dpmpp_3m_sde_gpu",
@@ -101,18 +101,19 @@
       "title": "VAE解码（音频）"
     }
   },
-  "13": {
+  "18": {
     "inputs": {
       "filename_prefix": "audio/ComfyUI",
+      "quality": "320k",
       "audioUI": "",
       "audio": [
         "12",
         0
       ]
     },
-    "class_type": "SaveAudio",
+    "class_type": "SaveAudioMP3",
     "_meta": {
-      "title": "保存音频"
+      "title": "Save Audio (MP3)"
     }
   }
 }
