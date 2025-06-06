@@ -105,7 +105,7 @@ def run_audio_workflow(
 
     try:
         audio_bytes = requests.get(f"{server}/view?filename={fname}&type=output&subfolder=audio", timeout=60).content
-        out_dir = pathlib.Path("outputs") / prefix / "audios"
+        out_dir = pathlib.Path("outputs") / prefix / "audio"
         out_dir.mkdir(exist_ok=True, parents=True)
         out_path = out_dir / pathlib.Path(fname).name
         out_path.write_bytes(audio_bytes)

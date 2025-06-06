@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from rich import print
-from typing import List, Optional
+from typing import List, Optional, Union, Pattern
 from pydantic import BaseModel, Field
 from langchain_core.documents import Document
 from langchain_core.messages import BaseMessage, HumanMessage
@@ -13,6 +13,10 @@ import time, re, json, base64
 from loguru import logger
 from prompt import EXTRACT_PERSON_PROMPT, GENERATE_SCRIPT_PROMPT
 from img import run_comfy_workflow, run_img2img_workflow
+from datetime import datetime
+from pathlib import Path
+from audio import run_audio_workflow
+from rich.console import Console
 
 
 load_dotenv()
@@ -40,6 +44,19 @@ vision_llm = ChatOpenAI(
 def encode_image(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode("utf-8")
+
+def replace_first(
+    text: str,
+    pattern: Union[str, Pattern[str]],
+    new_char: str
+) -> str:
+    """
+    把 `text` 中第一个匹配 `pattern` 的字符替换成 `new_char`。
+
+    - pattern 可以是普通字符，也可以是正则表达式（字符类、分组都行）
+    - 如果找不到匹配，原样返回
+    """
+    return re.sub(pattern, new_char, text, count=1)
 
 class Chapter(BaseModel):
     """小说章节类"""
@@ -108,7 +125,7 @@ def parse_novel_txt(path: str = "", context: str = "") -> List[Chapter]:
                 chapters_result.append(Chapter(title=title, content=content, novel_name=novel_name)) # type: ignore
     return chapters_result
 
-def split_chapter(chapters: List[Chapter], chunk_size: int = 4000, overlap: int = 0) -> List[Chapter]:
+def split_chapter(chapters: List[Chapter], chunk_size: int = 4000, overlap: int = 200) -> List[Chapter]:
     """
     将章节内容切分成Document对象，并返回
     :param chapter: 小说章节对象
@@ -218,29 +235,48 @@ def generate_script(chapter_document: Document, llm: ChatOpenAI, person_list: Li
     logger.info(f"{chapter_document.page_content[:10].strip()}...{chapter_document.page_content[-10:].strip()}提取脚本结果：\n{result}")
     return result
 
+
+# 使用一个类来管理从文本中提取的内容
+class ScriptGenInfo(BaseModel):
+    """从脚本中提取的等待生成的内容"""
+    persons: List[dict] = Field(default_factory=list, description="提取到的人物列表")
+    scenes: List[str] = Field(default_factory=list, description="提取到的场景列表")
+    titles: List[str] = Field(default_factory=list, description="提取到的章节标题列表")
+    music: List[str] = Field(default_factory=list, description="提取到的章节内容列表")
+    
+
 # 提取脚本中人物与场景信息，准备进行图像生成
-def extract_info_from_script(script_path: str, person_path: str, script: str = "") -> tuple[List[dict], List[str]]:
+def extract_info_from_script(script_path: Path, person_path: Path, script: str = "") -> ScriptGenInfo:
+    """从脚本文件中提取人物、场景与章节信息，并放在一个对象类中统一返回
+
+    Args:
+        script_path (Path): 脚本路径
+        person_path (Path): 人物信息路径
+        script (str, optional): 直接传入脚本内容. Defaults to "".
+
+    Returns:
+        ScriptGenInfo: 包含提取到的人物、场景与章节信息的对象
     """
-    从脚本中提取人物和场景信息
-    :param script: 对话脚本
-    :param script_path: 对话脚本文件路径
-    :param person_path: 人物信息文件路径
-    :return: 提取的人物和场景信息列表
-    """
+    result = ScriptGenInfo(
+        persons=[],
+        scenes=[],
+        music=[],
+        titles=[]
+    )
     if script == "":
         try:
             with open(script_path, "r", encoding="utf-8") as f:
                 script = f.read()
         except Exception as e:
             logger.error(f"读取脚本文件失败：{e}")
-            return []
+            return result
     if person_path:
         try:
             with open(person_path, "r", encoding="utf-8") as f:
                 person_list = json.load(f)
         except Exception as e:
             logger.error(f"读取人物信息文件失败：{e}")
-            return []
+            return result
     # 使用正则表达式提取<person>标签中的内容
     person_pattern = r"<person>(.*?)</person>"
     persons = re.findall(person_pattern, script)
@@ -261,24 +297,44 @@ def extract_info_from_script(script_path: str, person_path: str, script: str = "
                     break
     print(f"冲突人物信息：{conflit_persons}")
     print(f"当前人物信息：{person_list}")
-        
+    
+    # 处理冲突人物信息，即脚本中出现没有正常提取的人物
+    for newbie in conflit_persons:
+        if not any(person["name"] == newbie["name"] for person in person_list):
+            person_list.append({"name": newbie["name"], "labels": [newbie["label"]], "description": "请参考角色姓名生成合适的立绘", "novel_name": "", "seed": 42})
+        else:
+            for person in person_list:
+                if person["name"] == newbie["name"]:
+                    if newbie["label"] not in person["labels"]:
+                        person["labels"].append(newbie["label"])
+                    break
+    result.persons = person_list
     
     # 使用正则表达式提取<scene>标签中的内容
     scene_pattern = r"<scene>(.*?)</scene>"
     scenes = re.findall(scene_pattern, script)
     print(f"提取到的场景信息：{scenes}")
+    result.scenes = scenes
     
-    return person_list, scenes
+    # 提取脚本中每一章节的内容
+    music_pattern = r"<chapter>(.*?)</chapter>"
+    titles = re.findall(music_pattern, script)
+    result.titles = titles
+    for ch in titles:
+        script = script.replace(f"<chapter>{ch}</chapter>", "||||||||")
+    result.music = script.split("||||||||")
+    
+    return result
 
 # 调用大模型生成人物立绘文生图的提示词然后调用文生图工具并查看生成图像进行图生图优化
-def image_generator_agent(persons: List[dict]) -> List[str]:
+def image_generator_agent(persons: List[dict], prefix: str) -> None:
     """
     该智能体可以根据人物信息生成对应的立绘
     Args:
         persons (List[dict]): 人物信息列表
 
     Returns:
-        List[str]: 立绘生成图片路径
+        不返回内容，把生成的图片放置在指定路径即可
     """
     print(persons)
     for person in persons:
@@ -295,7 +351,7 @@ def image_generator_agent(persons: List[dict]) -> List[str]:
         print(f"人物 {person['name']} 的提示词生成结果：{response.content}")
         result = extract_json(response)
         print(f"正在为人物 {person['name']} 生成立绘...")
-        img_path = run_comfy_workflow(positive=result["positive"], negative=result["negative"])
+        img_path = run_comfy_workflow(positive=result["positive"], negative=result["negative"], prefix=prefix)
         person_img_path = img_path.with_name(f"{person['name']}.png")
         img_path.rename(person_img_path)
         print(f"人物 {person['name']} 的立绘生成成功，图片路径为：{person_img_path}")
@@ -314,7 +370,7 @@ def image_generator_agent(persons: List[dict]) -> List[str]:
             print(f"人物 {person['name']} 标签 {label} 的提示词生成结果：{response.content}")
             result = extract_json(response)
             print(f"正在为人物 {person['name']} 标签 {label} 生成立绘...")
-            label_img_path = run_img2img_workflow(input_image=str(person_img_path.resolve()), positive=result["positive"], negative=result["negative"])
+            label_img_path = run_img2img_workflow(input_image=str(person_img_path.resolve()), positive=result["positive"], negative=result["negative"], prefix=prefix)
             person_label_img_path = img_path.with_name(f"{person['name']} {label}.png")
             label_img_path.rename(person_label_img_path)
             print(f"人物 {person['name']} 标签 {label} 的立绘生成成功，图片路径为：{person_label_img_path}")
@@ -336,23 +392,158 @@ def image_generator_agent(persons: List[dict]) -> List[str]:
         #     update_img_path = run_img2img_workflow(input_image=img_path, positive=result["positive"], negative=result["negative"])
         #     print(f"人物 {person['name']} 的立绘修改成功，图片路径为：{update_img_path}")
 
+# 调用大模型生成场景图片，采用1280x720分辨率生成背景
+def scene_generator_agent(scenes: List[str], prefix: str) -> None:
+    """
+    该智能体可以根据场景信息生成对应的背景图
+    Args:
+        scenes (List[str]): 场景信息列表
+
+    Returns:
+        None
+    """
+    previous_scene = ""
+    for scene in scenes:
+        text2img_message = HumanMessage(
+            content=[
+                {"type": "text", "text": f"我会给你提供一个小说描写的场景信息以及这个场景的上一个场景，然后你需要结合当前场景信息以及上一个场景，生成一个使用FLUX-dev模型的文生图提示词，这个提示词应当具备正面提示词与负面提示词两个部分的内容，以更好地生成符合场景描述的背景图。\
+                请使用简洁清晰的英文短句来构建提示词，注意你可以扩展提供的场景描述，并且结合场景描述中的细节等构造出一个场景形象的描述，有可能场景描述中有人物的信息，但是你在生成提示词时需要有意去掉人物信息，只生成没有人物的场景。请尽量详细描写正面提示词，\
+                尽量从各种角度完善场景形象，控制在10句以上；而负面提示词尽量使用那些有利于场景生成、减少人物生成的常见负面提示词，并且针对场景形象做出适应的改变。请你使用如下的\
+                JSON格式返回提示词：```json\n{{'positive': '正面提示词，使用逗号分隔的多个句子', 'negative': '负面提示词，使用逗号分隔的多个句子'}}\n```\n，当前场景的信息如下{scene}，上一场景的信息如下{previous_scene}。请注意，当前场景信息可能会从上一场景变化，当然也可能毫无关系，因此你需要根据当前场景信息和上一场景信息来生成提示词。"}
+            ]
+        )
+        previous_scene = scene
+        print(f"正在为场景 {scene} 生成提示词...")
+        response = llm.invoke([text2img_message])
+        print(f"场景 {scene} 的提示词生成结果：{response.content}")
+        result = extract_json(response)
+        print(f"正在为场景 {scene} 生成背景图...")
+        img_path = run_comfy_workflow(positive=result["positive"], negative=result["negative"], width=910, height=512, prefix=prefix)
+        # 使用编号为场景名称的图片名称
+        scene_img_path = img_path.with_name(f"bg {scenes.index(scene)}.png")
+        img_path.rename(scene_img_path)
+        print(f"场景 {scene} 的背景图生成成功，图片路径为：{scene_img_path}")
+
+# 背景音乐生成
+def music_gen(musics: List[str], prefix: str) -> None:
+    """从每一章节的脚本中生成适合的音乐
+
+    Args:
+        musics (List[str]): 需求生成音乐的章节内容
+        prefix (str): 最终存储位置
+    """
+    for index, music in enumerate(musics):
+        if music.strip() == "":
+            continue
+        prompt = f"我会给你提供一篇视觉小说脚本，然后你需要结合提供的脚本内容，生成一个使用stable-audio模型的音乐生成提示词，这个提示词应当具备正面提示词与负面提示词两个部分的内容，以更好地生成适合脚本演绎的背景音乐。\
+                请使用简洁清晰的英文短句来构建提示词，一个例子是Soulful Boom Bap Hip Hop instrumental, Solemn effected Piano, SP-1200, low-key swing drums, sine wave bass, Characterful, Peaceful, Interesting, well-arranged composition, 90 BPM，\
+                请注意这个背景音乐需要在脚本演绎时播放，因此你需要考虑什么样子的音乐适合，我初步考虑是尽量不要有人声的，负面提示词简要描写即可，要求不多。请你使用如下的\
+                JSON格式返回提示词：```json\n{{'positive': '正面提示词，使用逗号分隔的多个句子', 'negative': '负面提示词，使用逗号分隔的多个句子'}}\n```\n，当前脚本章节信息如下{music}"
+        response = llm.invoke(prompt)
+        print(f"生成音乐提示词的LLM结果：{response}")
+        result = extract_json(response)
+        if result:
+            music_path = run_audio_workflow(prefix=prefix, positive=result["positive"], negative=result["negative"])
+            result_path = music_path.with_name(f"{index}.mp3")
+            music_path.rename(result_path)
+            print(f"[green][b]音乐生成完成！结果保存在：{result_path}[/b][/green]")
+            
+# 脚本转化
+def convert_script(script_path: Path) -> None:
+    """把带有xml标签的脚本转化为renpy格式脚本
+
+    Args:
+        script_path (Path): 给定的脚本路径
+    """
+    output_path = script_path.with_name("script").with_suffix(".rpy")
+    console = Console()
+    with open(script_path, "r", encoding="utf-8") as f:
+        script_content = f.read()
+        print(f"[bold cyan]正在转化脚本：{script_path}[/]")
+        with console.status("[bold cyan]正在转化角色名...[/]", spinner="dots"):
+            person_pattern = r"<person>(.*?)</person>"
+            persons = re.findall(person_pattern, script_content)
+            for person in persons:
+                script_content = replace_first(script_content, f"<person>{person}</person>", f"show {person}")
+            console.print(f"[green]转化角色名完成![/green]")
+        with console.status("[bold cyan]正在转化背景描述...[/]", spinner="dots"):
+            scene_pattern = r"<scene>(.*?)</scene>"
+            scenes = re.findall(scene_pattern, script_content)
+            for index, scene in enumerate(scenes):
+                script_content = replace_first(script_content, f"<scene>{scene}</scene>", f"scene bg {index}")
+            console.print(f"[green]转化背景描述完成![/green]")
+        with console.status("[bold cyan]转化音乐描述中，请稍候…[/]", spinner="dots"):
+            title_pattern = r"<chapter>(.*?)</chapter>"
+            titles = re.findall(title_pattern, script_content)
+            for index, title in enumerate(titles):
+                script_content = replace_first(script_content, f"<chapter>{title}</chapter>", f"play music {index}")
+            console.print(f"[green]转化音乐描述完成![/green]")
+    print(f"开始写入输出文档")
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("label start:\n    ")
+        f.write(script_content.replace("\n", "\n    "))
+    print(f"[green]输出文档已保存到：{output_path}[/green]")
+
+
 if __name__ == "__main__":
-    # file_path = "novels/朝闻道.txt"
+    console = Console()
+    file_path = "novels/最后一个问题.txt"
     # chapters = split_chapter(parse_novel_txt(path=file_path))
-    # # print(chapters)
+    # print(chapters)
+    # for chapter in chapters:
+    #     print(chapter.title)
+    #     for chunk in chapter.chunks:
+    #         pass
     # result = ""
     # person_list = []
-    # for chapter in chapters:
-    #     for chunk in chapter.chunks:
-    #         person_list = generate_person(chunk, llm, person_list)
-    #         result += generate_script(chunk, llm, person_list, previous_script=result)
-    # print(f"最终人物：{person_list}")
-    # with open(f"scripts/{file_path.split('/')[1].split('.')[0]}_result_{str(int(time.time()))}.txt", "a", encoding="utf-8") as f:
+    # # 增加rich加载
+    # start_time = time.time()
+    # with console.status("[bold cyan]小说脚本与人物 正在生成，请稍候…[/]", spinner="dots"):
+    #     for chapter in chapters:
+    #         # 在每一章开始时，增加一个标记，用来准备音乐生成
+    #         result += f"\n<chapter>{chapter.title}</chapter>\n"
+    #         for chunk in chapter.chunks:
+    #             person_list = generate_person(chunk, llm, person_list)
+    #             result += generate_script(chunk, llm, person_list, previous_script=result) + "\n"
+    #     console.print(f"最终人物：{person_list}")
+    #     console.print(f"最终脚本：{result[:1000]}...")  # 只打印前1000个字符
+    #     console.print(f"[bold green]小说脚本与人物生成完成！用时{time.time() - start_time:.2f}秒[/]")
+    # date = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    # label = Path(file_path).name.split(".")[0] + f"_{date}"  # 获取文件名加时间作为标签
+    # # 在这里写一下预期的输出路径结构
+    # # 脚本输出路径：outputs/{label}/script.txt
+    # # 人物输出路径：outputs/{label}/person.json
+    # # 图片输出路径：outputs/{label}/images/xxx.png
+    # # 音频输出路径：outputs/{label}/audio/xxx.mp3
+    # base_dir = Path("outputs") / label            # outputs/<label> 目录
+    # base_dir.mkdir(parents=True, exist_ok=True)   # 若不存在则递归创建
+
+    # script_path = base_dir / "script.txt"
+    # person_path = base_dir / "person.json"
+
+    # # —— 1. 追加写入脚本 ——  
+    # with script_path.open("a", encoding="utf-8") as f:  # append 模式
     #     f.write(result)
 
-    # with open(f"scripts/{file_path.split('/')[1].split('.')[0]}_person_{str(int(time.time()))}.json", "w", encoding="utf-8") as f:
-    #     json.dump([person.model_dump() for person in person_list], f, ensure_ascii=False, indent=4)
-    script_path = "scripts/朝闻道_result_1749052829.txt"
-    person_path = "scripts/朝闻道_person_1749052829.json"
-    persons, scenes = extract_info_from_script(script_path, person_path)
-    image_generator_agent(persons[:1])
+    # # —— 2. 覆盖写入人物信息 ——  
+    # person_json = json.dumps(
+    #     [p.model_dump() for p in person_list],
+    #     ensure_ascii=False,
+    #     indent=4
+    # )
+    # person_path.write_text(person_json, encoding="utf-8")
+    label = "最后一个问题_2025-06-07-00-05-58"
+    script_path = Path("outputs/最后一个问题_2025-06-07-00-05-58/script.txt")
+    person_path = Path("outputs/最后一个问题_2025-06-07-00-05-58/person.json")
+    result = extract_info_from_script(script_path, person_path)
+    print(result)
+    with console.status("[bold cyan]生成人物立绘，请稍候…[/]", spinner="dots"):
+        console.print(f"角色共 {len(result.persons)} 个")
+        image_generator_agent(result.persons, prefix=label)
+    with console.status("[bold cyan]生成场景，请稍候…[/]", spinner="dots"):
+        console.print(f"场景共 {len(result.scenes)} 个")
+        scene_generator_agent(result.scenes, prefix=label)
+    with console.status("[bold cyan]生成音乐，请稍候…[/]", spinner="dots"):
+        console.print(f"音乐共 {len(result.music)} 个")
+        music_gen(result.music, prefix=label)
+    convert_script(script_path)
