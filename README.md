@@ -40,6 +40,7 @@ uv sync
 - `img.py`：调用 ComfyUI 根据描述生成人物或场景图片。
 - `audio.py`：调用 ComfyUI 生成对白或音乐音频。
 - `prompt.py`：存放与大模型交互的提示词模板。
+- `web_ui.py`：基于 Gradio 的图形界面，整合从文档上传到素材生成的完整流程。
 
 ## 运行方式
 
@@ -50,4 +51,14 @@ uv run base.py
 ```
 
 生成的脚本和人物信息会存放在 `outputs/` 目录下。若需要批量生成图片或音频，可分别运行 `img.py` 和 `audio.py`，或在 `base.py` 中按需调用。
+
+## 启动 Web 界面
+
+通过 `web_ui.py` 可以在浏览器中体验完整流程：
+
+```bash
+uv run web_ui.py
+```
+
+界面中可上传文本或选择示例文件，并在折叠的配置面板中填写大模型和 ComfyUI 的参数。
 
