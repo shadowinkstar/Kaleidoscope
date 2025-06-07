@@ -253,7 +253,7 @@ def run_img2img_workflow(
         return None
 
 # 去除人物图片背景
-def remove_background(image_path: str, output_path: str):
+def remove_background(image_path: pathlib.Path | str, output_path: pathlib.Path | str):
     """
     使用rembg库去除图片背景
     Args:

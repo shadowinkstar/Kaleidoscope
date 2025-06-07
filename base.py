@@ -453,10 +453,11 @@ def scene_generator_agent(scenes: List[str], prefix: str, server: str = "http://
         logger.debug(f"场景 {scene} 的提示词生成结果：{response.content}")
         result = extract_json(response)
         logger.info(f"正在为场景 {scene} 生成背景图...")
-        img_path = run_comfy_workflow(server=server, positive=result["positive"], negative=result["negative"], width=910, height=512, prefix=prefix)
+        img_path = run_comfy_workflow(server=server, positive=result["positive"], negative=result["negative"], width=910, height=512, prefix=prefix) # type: ignore
         # 使用编号为场景名称的图片名称
-        scene_img_path = img_path.with_name(f"bg {scenes.index(scene)}.png")
-        img_path.rename(scene_img_path)
+        if img_path:
+            scene_img_path = img_path.with_name(f"bg {scenes.index(scene)}.png")
+            img_path.rename(scene_img_path)
         logger.info(f"场景 {scene} 的背景图生成成功，图片路径为：{scene_img_path}")
 
 # 背景音乐生成
