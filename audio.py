@@ -1,7 +1,7 @@
 import json, uuid, time, requests, pathlib
 from typing import Optional
-from rich import print
 from rich.console import Console
+from log_config import logger
 
 console = Console()
 
@@ -52,14 +52,13 @@ def run_audio_workflow(
     try:
         resp = requests.post(f"{server}/prompt", json=payload, timeout=30)
         result = resp.json()
-        print("[yellow][b]ComfyUI /prompt 返回：[/b][/yellow]")
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+        logger.debug("ComfyUI /prompt 返回：\n{}", json.dumps(result, indent=2, ensure_ascii=False))
         if "error" in result:
-            print("[red][b]ComfyUI /prompt 接口报错，流程终止！[/b][/red]")
+            logger.error("ComfyUI /prompt 接口报错，流程终止！")
             return None
         prompt_id = result["prompt_id"]
     except Exception as e:
-        print(f"[red][b]提交 /prompt 失败:[/b] {e}")
+        logger.error(f"提交 /prompt 失败:{e}")
         return None
 
     # 轮询生成状态
@@ -88,7 +87,7 @@ def run_audio_workflow(
 
     # 获取音频文件名
     fname = None
-    print(outputs)
+    logger.debug(outputs)
     if isinstance(outputs, dict):
         node = outputs.get(str(save_node_id))
         if node:
@@ -100,7 +99,7 @@ def run_audio_workflow(
                 elif "filename" in node:
                     fname = node["filename"]
     if not fname:
-        print(f"[red]未找到输出文件名，请检查 outputs 字段实际内容！[/red]")
+        logger.error("未找到输出文件名，请检查 outputs 字段实际内容！")
         return None
 
     try:
@@ -109,15 +108,15 @@ def run_audio_workflow(
         out_dir.mkdir(exist_ok=True, parents=True)
         out_path = out_dir / pathlib.Path(fname).name
         out_path.write_bytes(audio_bytes)
-        print(f"[green]音频已保存到：{out_path}[/green]")
+        logger.info(f"音频已保存到：{out_path}")
         return out_path
     except Exception as e:
-        print(f"[red]音频下载失败：{e}")
+        logger.error(f"音频下载失败：{e}")
         return None
 
 
 if __name__ == "__main__":
-    print("[cyan][b]=== 音频生成示例 ===[/b][/cyan]")
+    logger.info("=== 音频生成示例 ===")
     audio_result = run_audio_workflow(
         prefix="demo",
         workflow_path="comfyui_workflows/stable_audio.json",
@@ -130,6 +129,6 @@ if __name__ == "__main__":
     )
 
     if audio_result:
-        print(f"[green][b]音频生成完成！结果保存在：{audio_result}[/b][/green]")
+        logger.info(f"音频生成完成！结果保存在：{audio_result}")
     else:
-        print("[red][b]音频生成失败！[/b][/red]")
+        logger.error("音频生成失败！")
