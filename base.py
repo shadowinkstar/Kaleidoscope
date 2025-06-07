@@ -198,7 +198,11 @@ def generate_person(chapter_document: Document, llm: ChatOpenAI, person_list: Li
     # print(prompt.invoke({"text": chapter_document.page_content}))
     chain = prompt | llm 
     input_person_list = [{"name": person.name, "description": person.description} for person in person_list]
-    result = extract_json(chain.invoke({"text": chapter_document.page_content, "person_list": input_person_list}))
+    try:
+        result = extract_json(chain.invoke({"text": chapter_document.page_content, "person_list": input_person_list}))
+    except Exception as e:
+        print(f"提取人物出现错误{e}，直接返回空")
+        return []
     logger.info(f"{chapter_document.page_content[:10].strip()}...{chapter_document.page_content[-10:].strip()}提取人物结果：\n{result}")
     result_person_list = person_list.copy()
     # 使用模型输出的result更新人物列表
@@ -351,7 +355,17 @@ def image_generator_agent(persons: List[dict], prefix: str) -> None:
         print(f"正在为人物 {person['name']} 生成提示词...")
         response = llm.invoke([text2img_message])
         print(f"人物 {person['name']} 的提示词生成结果：{response.content}")
-        result = extract_json(response)
+        try:
+            result = extract_json(response)
+        except:
+            print(f"正在为人物 {person['name']} 生成提示词...")
+            response = llm.invoke([text2img_message])
+            print(f"人物 {person['name']} 的提示词生成结果：{response.content}")
+            try:
+                result = extract_json(response)
+            except Exception as e:
+                print(f"[red][b]重试后提示词生成结果解析失败:[/b] {e}")
+                result = {"positive": person["decription"], "negative": ""}
         print(f"正在为人物 {person['name']} 生成立绘...")
         img_path = run_comfy_workflow(positive=result["positive"], negative=result["negative"], prefix=prefix) # type: ignore
         if img_path:
@@ -375,9 +389,18 @@ def image_generator_agent(persons: List[dict], prefix: str) -> None:
             )
             response = llm.invoke([text2img_message])
             print(f"人物 {person['name']} 标签 {label} 的提示词生成结果：{response.content}")
-            result = extract_json(response)
+            try:
+                label_result = extract_json(response)
+            except:
+                response = llm.invoke([text2img_message])
+                print(f"人物 {person['name']} 标签 {label} 的提示词生成结果：{response.content}")
+                try:
+                    label_result = extract_json(response)
+                except Exception as e:
+                    print(f"[red][b]重新生成提示词失败:[/b] {e}")
+                    label_result = {"positive": f"{result['positive']}, {label}", "negative": f"{result['negative']}"} # type: ignore
             print(f"正在为人物 {person['name']} 标签 {label} 生成立绘...")
-            label_img_path = run_img2img_workflow(input_image=str(person_img_path.resolve()), positive=result["positive"], negative=result["negative"], prefix=prefix) # type: ignore
+            label_img_path = run_img2img_workflow(input_image=str(person_img_path.resolve()), positive=label_result["positive"], negative=label_result["negative"], prefix=prefix) # type: ignore
             if label_img_path:
                 person_label_img_path = label_img_path.with_name(f"{person['name']} {label}.png")
                 label_img_path.rename(person_label_img_path)
@@ -552,56 +575,56 @@ def concat(dst: Path, *srcs: Path) -> None:
 
 if __name__ == "__main__":
     console = Console()
-    file_path = "novels/乡村教师.txt"
-    chapters = split_chapter(parse_novel_txt(path=file_path))
-    # print(chapters)
-    for chapter in chapters:
-        # print(chapter.title)
-        for chunk in chapter.chunks:
-            pass
-    result = ""
-    person_list = []
-    # 增加rich加载
-    start_time = time.time()
-    with console.status("[bold cyan]小说脚本与人物 正在生成，请稍候…[/]", spinner="dots"):
-        for chapter in chapters:
-            # 在每一章开始时，增加一个标记，用来准备音乐生成
-            result += f"\n<chapter>{chapter.title}</chapter>\n"
-            for chunk in chapter.chunks:
-                person_list = generate_person(chunk, llm, person_list)
-                result += generate_script(chunk, llm, person_list, previous_script=result) + "\n"
-        console.print(f"最终人物：{person_list}")
-        console.print(f"最终脚本：{result[:1000]}...")  # 只打印前1000个字符
-        console.print(f"[bold green]小说脚本与人物生成完成！用时{time.time() - start_time:.2f}秒[/]")
-    date = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    label = Path(file_path).name.split(".")[0] + f"_{date}"  # 获取文件名加时间作为标签
-    # 在这里写一下预期的输出路径结构
-    # 脚本输出路径：outputs/{label}/script.txt
-    # 人物输出路径：outputs/{label}/person.json
-    # 图片输出路径：outputs/{label}/images/xxx.png
-    # 音频输出路径：outputs/{label}/audio/xxx.mp3
-    base_dir = Path("outputs") / label            # outputs/<label> 目录
-    base_dir.mkdir(parents=True, exist_ok=True)   # 若不存在则递归创建
+    # file_path = "novels/乡村教师.txt"
+    # chapters = split_chapter(parse_novel_txt(path=file_path))
+    # # print(chapters)
+    # for chapter in chapters:
+    #     # print(chapter.title)
+    #     for chunk in chapter.chunks:
+    #         pass
+    # result = ""
+    # person_list = []
+    # # 增加rich加载
+    # start_time = time.time()
+    # with console.status("[bold cyan]小说脚本与人物 正在生成，请稍候…[/]", spinner="dots"):
+    #     for chapter in chapters:
+    #         # 在每一章开始时，增加一个标记，用来准备音乐生成
+    #         result += f"\n<chapter>{chapter.title}</chapter>\n"
+    #         for chunk in chapter.chunks:
+    #             person_list = generate_person(chunk, llm, person_list)
+    #             result += generate_script(chunk, llm, person_list, previous_script=result) + "\n"
+    #     console.print(f"最终人物：{person_list}")
+    #     console.print(f"最终脚本：{result[:1000]}...")  # 只打印前1000个字符
+    #     console.print(f"[bold green]小说脚本与人物生成完成！用时{time.time() - start_time:.2f}秒[/]")
+    # date = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    # label = Path(file_path).name.split(".")[0] + f"_{date}"  # 获取文件名加时间作为标签
+    # # 在这里写一下预期的输出路径结构
+    # # 脚本输出路径：outputs/{label}/script.txt
+    # # 人物输出路径：outputs/{label}/person.json
+    # # 图片输出路径：outputs/{label}/images/xxx.png
+    # # 音频输出路径：outputs/{label}/audio/xxx.mp3
+    # base_dir = Path("outputs") / label            # outputs/<label> 目录
+    # base_dir.mkdir(parents=True, exist_ok=True)   # 若不存在则递归创建
 
-    script_path = base_dir / "script.txt"
-    person_path = base_dir / "person.json"
+    # script_path = base_dir / "script.txt"
+    # person_path = base_dir / "person.json"
 
-    # —— 1. 追加写入脚本 ——  
-    with script_path.open("a", encoding="utf-8") as f:  # append 模式
-        f.write(result)
+    # # —— 1. 追加写入脚本 ——  
+    # with script_path.open("a", encoding="utf-8") as f:  # append 模式
+    #     f.write(result)
 
-    # —— 2. 覆盖写入人物信息 ——  
-    person_json = json.dumps(
-        [p.model_dump() for p in person_list],
-        ensure_ascii=False,
-        indent=4
-    )
-    person_path.write_text(person_json, encoding="utf-8")
-    # label = "最后一个问题_2025-06-07-00-05-58"
-    # script_path = Path("outputs/最后一个问题_2025-06-07-00-05-58/script.txt")
-    # person_path = Path("outputs/最后一个问题_2025-06-07-00-05-58/person.json")
+    # # —— 2. 覆盖写入人物信息 ——  
+    # person_json = json.dumps(
+    #     [p.model_dump() for p in person_list],
+    #     ensure_ascii=False,
+    #     indent=4
+    # )
+    # person_path.write_text(person_json, encoding="utf-8")
+    label = "乡村教师_2025-06-08-01-07-48"
+    script_path = Path(f"outputs/{label}/script.txt")
+    person_path = Path(f"outputs/{label}/person.json")
     result = extract_info_from_script(script_path, person_path)
-    print(result.persons)
+    # print(result.persons)
     console.print(f"角色共 {len(result.persons)} 个")
     image_generator_agent(result.persons, prefix=label)
     console.print(f"场景共 {len(result.scenes)} 个")
