@@ -12,11 +12,13 @@ from bs4 import BeautifulSoup
 import time, re, json, base64
 from loguru import logger
 from prompt import EXTRACT_PERSON_PROMPT, GENERATE_SCRIPT_PROMPT
-from img import run_comfy_workflow, run_img2img_workflow
+from img import run_comfy_workflow, run_img2img_workflow, remove_background
 from datetime import datetime
 from pathlib import Path
 from audio import run_audio_workflow
 from rich.console import Console
+from collections import Counter
+import shutil
 
 
 load_dotenv()
@@ -322,7 +324,7 @@ def extract_info_from_script(script_path: Path, person_path: Path, script: str =
     result.titles = titles
     for ch in titles:
         script = script.replace(f"<chapter>{ch}</chapter>", "||||||||")
-    result.music = script.split("||||||||")
+    result.music = script.split("||||||||")[1:] # TODO: 这里只是暂时去除一个回车带来的多余划分，没有处理更多的错误情况
     
     return result
 
@@ -351,12 +353,17 @@ def image_generator_agent(persons: List[dict], prefix: str) -> None:
         print(f"人物 {person['name']} 的提示词生成结果：{response.content}")
         result = extract_json(response)
         print(f"正在为人物 {person['name']} 生成立绘...")
-        img_path = run_comfy_workflow(positive=result["positive"], negative=result["negative"], prefix=prefix)
-        person_img_path = img_path.with_name(f"{person['name']}.png")
-        img_path.rename(person_img_path)
+        img_path = run_comfy_workflow(positive=result["positive"], negative=result["negative"], prefix=prefix) # type: ignore
+        if img_path:
+            person_img_path = img_path.with_name(f"{person['name']}.png")
+            img_path.rename(person_img_path)
+            # 去除人物背景
+            remove_background(person_img_path, person_img_path)
+        else:
+            raise Exception("图片生成失败")
         print(f"人物 {person['name']} 的立绘生成成功，图片路径为：{person_img_path}")
         # 开始针对不同的label生成一系列立绘
-        for label in person["labels"][:3]:
+        for label in person["labels"]:
             print(f"正在为人物 {person['name']} 生成标签 {label} 的提示词...")
             text2img_message = HumanMessage(
                 content=[
@@ -370,9 +377,14 @@ def image_generator_agent(persons: List[dict], prefix: str) -> None:
             print(f"人物 {person['name']} 标签 {label} 的提示词生成结果：{response.content}")
             result = extract_json(response)
             print(f"正在为人物 {person['name']} 标签 {label} 生成立绘...")
-            label_img_path = run_img2img_workflow(input_image=str(person_img_path.resolve()), positive=result["positive"], negative=result["negative"], prefix=prefix)
-            person_label_img_path = img_path.with_name(f"{person['name']} {label}.png")
-            label_img_path.rename(person_label_img_path)
+            label_img_path = run_img2img_workflow(input_image=str(person_img_path.resolve()), positive=result["positive"], negative=result["negative"], prefix=prefix) # type: ignore
+            if label_img_path:
+                person_label_img_path = label_img_path.with_name(f"{person['name']} {label}.png")
+                label_img_path.rename(person_label_img_path)
+                # 背景移除
+                remove_background(person_label_img_path, person_label_img_path)
+            else:
+                raise Exception("图片生成失败")
             print(f"人物 {person['name']} 标签 {label} 的立绘生成成功，图片路径为：{person_label_img_path}")
         # base64_image = encode_image(img_path)
         # img2img_message = HumanMessage(
@@ -434,7 +446,7 @@ def music_gen(musics: List[str], prefix: str) -> None:
     """
     for index, music in enumerate(musics):
         if music.strip() == "":
-            continue
+            continue  # TODO: 处理空行！
         prompt = f"我会给你提供一篇视觉小说脚本，然后你需要结合提供的脚本内容，生成一个使用stable-audio模型的音乐生成提示词，这个提示词应当具备正面提示词与负面提示词两个部分的内容，以更好地生成适合脚本演绎的背景音乐。\
                 请使用简洁清晰的英文短句来构建提示词，一个例子是Soulful Boom Bap Hip Hop instrumental, Solemn effected Piano, SP-1200, low-key swing drums, sine wave bass, Characterful, Peaceful, Interesting, well-arranged composition, 90 BPM，\
                 请注意这个背景音乐需要在脚本演绎时播放，因此你需要考虑什么样子的音乐适合，我初步考虑是尽量不要有人声的，负面提示词简要描写即可，要求不多。请你使用如下的\
@@ -443,12 +455,15 @@ def music_gen(musics: List[str], prefix: str) -> None:
         print(f"生成音乐提示词的LLM结果：{response}")
         result = extract_json(response)
         if result:
-            music_path = run_audio_workflow(prefix=prefix, positive=result["positive"], negative=result["negative"])
-            result_path = music_path.with_name(f"{index}.mp3")
-            music_path.rename(result_path)
+            music_path = run_audio_workflow(prefix=prefix, positive=result["positive"], negative=result["negative"], duration=60.0) # type: ignore
+            if music_path:
+                result_path = music_path.with_name(f"{index}.mp3")
+                music_path.rename(result_path)
+            else:
+                raise Exception("音乐生成失败")
             print(f"[green][b]音乐生成完成！结果保存在：{result_path}[/b][/green]")
             
-# 脚本转化
+# 脚本转化 TODO: 处理脚本中各种语法问题，在生成结束后保证下限
 def convert_script(script_path: Path) -> None:
     """把带有xml标签的脚本转化为renpy格式脚本
 
@@ -484,66 +499,116 @@ def convert_script(script_path: Path) -> None:
         f.write(script_content.replace("\n", "\n    "))
     print(f"[green]输出文档已保存到：{output_path}[/green]")
 
+def tag_by_dialogue(src: Path, dst: Path) -> None:
+    order_many = ["middle", "left", "right", "left", "right"]
+    lines = src.read_text(encoding="utf-8").splitlines()
+    out, i, n = [], 0, len(lines)
+
+    while i < n:
+        # ---------- scene 行 ----------
+        if re.match(r'\s*scene\b', lines[i]):
+            scene_line = f'{lines[i]} at fullscreen_cover'
+            out.append(scene_line)
+            i += 1
+            continue
+
+        # ---------- 一个 scene 区块 ----------
+        block = []
+        while i < n and not re.match(r'\s*scene\b', lines[i]):
+            block.append(lines[i]); i += 1
+
+        # ---------- 统计说话角色 ----------
+        talkers = [m.group(1) for ln in block if (m := re.match(r'\s*"(.*?)"\s', ln))]
+        cnt = Counter(talkers)
+        uniq = list(cnt)
+        tag_map = {}
+
+        if len(uniq) == 1:
+            tag_map[uniq[0]] = "middle"
+        elif len(uniq) == 2:
+            a, b = cnt.most_common()
+            tag_map[a[0]] = "left"
+            tag_map[b[0]] = "right"
+        else:
+            for idx, (name, _) in enumerate(cnt.most_common()):
+                tag_map[name] = order_many[idx % len(order_many)]
+
+        # ---------- 给 show 行加标记 ----------
+        for ln in block:
+            if ln.strip().startswith("show "):
+                parts = ln.split()
+                if len(parts) > 1:
+                    tag = tag_map.get(parts[1])
+                    if tag:
+                        ln = f'{ln} at {tag}'
+            out.append(ln)
+
+    Path(dst).write_text("\n".join(out), encoding="utf-8")
+def concat(dst: Path, *srcs: Path) -> None:
+    with dst.open("wb") as w:
+        for src in srcs:
+            with src.open("rb") as r:
+                shutil.copyfileobj(r, w)   # 块拷贝
 
 if __name__ == "__main__":
     console = Console()
-    file_path = "novels/最后一个问题.txt"
-    # chapters = split_chapter(parse_novel_txt(path=file_path))
+    file_path = "novels/乡村教师.txt"
+    chapters = split_chapter(parse_novel_txt(path=file_path))
     # print(chapters)
-    # for chapter in chapters:
-    #     print(chapter.title)
-    #     for chunk in chapter.chunks:
-    #         pass
-    # result = ""
-    # person_list = []
-    # # 增加rich加载
-    # start_time = time.time()
-    # with console.status("[bold cyan]小说脚本与人物 正在生成，请稍候…[/]", spinner="dots"):
-    #     for chapter in chapters:
-    #         # 在每一章开始时，增加一个标记，用来准备音乐生成
-    #         result += f"\n<chapter>{chapter.title}</chapter>\n"
-    #         for chunk in chapter.chunks:
-    #             person_list = generate_person(chunk, llm, person_list)
-    #             result += generate_script(chunk, llm, person_list, previous_script=result) + "\n"
-    #     console.print(f"最终人物：{person_list}")
-    #     console.print(f"最终脚本：{result[:1000]}...")  # 只打印前1000个字符
-    #     console.print(f"[bold green]小说脚本与人物生成完成！用时{time.time() - start_time:.2f}秒[/]")
-    # date = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    # label = Path(file_path).name.split(".")[0] + f"_{date}"  # 获取文件名加时间作为标签
-    # # 在这里写一下预期的输出路径结构
-    # # 脚本输出路径：outputs/{label}/script.txt
-    # # 人物输出路径：outputs/{label}/person.json
-    # # 图片输出路径：outputs/{label}/images/xxx.png
-    # # 音频输出路径：outputs/{label}/audio/xxx.mp3
-    # base_dir = Path("outputs") / label            # outputs/<label> 目录
-    # base_dir.mkdir(parents=True, exist_ok=True)   # 若不存在则递归创建
+    for chapter in chapters:
+        # print(chapter.title)
+        for chunk in chapter.chunks:
+            pass
+    result = ""
+    person_list = []
+    # 增加rich加载
+    start_time = time.time()
+    with console.status("[bold cyan]小说脚本与人物 正在生成，请稍候…[/]", spinner="dots"):
+        for chapter in chapters:
+            # 在每一章开始时，增加一个标记，用来准备音乐生成
+            result += f"\n<chapter>{chapter.title}</chapter>\n"
+            for chunk in chapter.chunks:
+                person_list = generate_person(chunk, llm, person_list)
+                result += generate_script(chunk, llm, person_list, previous_script=result) + "\n"
+        console.print(f"最终人物：{person_list}")
+        console.print(f"最终脚本：{result[:1000]}...")  # 只打印前1000个字符
+        console.print(f"[bold green]小说脚本与人物生成完成！用时{time.time() - start_time:.2f}秒[/]")
+    date = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    label = Path(file_path).name.split(".")[0] + f"_{date}"  # 获取文件名加时间作为标签
+    # 在这里写一下预期的输出路径结构
+    # 脚本输出路径：outputs/{label}/script.txt
+    # 人物输出路径：outputs/{label}/person.json
+    # 图片输出路径：outputs/{label}/images/xxx.png
+    # 音频输出路径：outputs/{label}/audio/xxx.mp3
+    base_dir = Path("outputs") / label            # outputs/<label> 目录
+    base_dir.mkdir(parents=True, exist_ok=True)   # 若不存在则递归创建
 
-    # script_path = base_dir / "script.txt"
-    # person_path = base_dir / "person.json"
+    script_path = base_dir / "script.txt"
+    person_path = base_dir / "person.json"
 
-    # # —— 1. 追加写入脚本 ——  
-    # with script_path.open("a", encoding="utf-8") as f:  # append 模式
-    #     f.write(result)
+    # —— 1. 追加写入脚本 ——  
+    with script_path.open("a", encoding="utf-8") as f:  # append 模式
+        f.write(result)
 
-    # # —— 2. 覆盖写入人物信息 ——  
-    # person_json = json.dumps(
-    #     [p.model_dump() for p in person_list],
-    #     ensure_ascii=False,
-    #     indent=4
-    # )
-    # person_path.write_text(person_json, encoding="utf-8")
-    label = "最后一个问题_2025-06-07-00-05-58"
-    script_path = Path("outputs/最后一个问题_2025-06-07-00-05-58/script.txt")
-    person_path = Path("outputs/最后一个问题_2025-06-07-00-05-58/person.json")
+    # —— 2. 覆盖写入人物信息 ——  
+    person_json = json.dumps(
+        [p.model_dump() for p in person_list],
+        ensure_ascii=False,
+        indent=4
+    )
+    person_path.write_text(person_json, encoding="utf-8")
+    # label = "最后一个问题_2025-06-07-00-05-58"
+    # script_path = Path("outputs/最后一个问题_2025-06-07-00-05-58/script.txt")
+    # person_path = Path("outputs/最后一个问题_2025-06-07-00-05-58/person.json")
     result = extract_info_from_script(script_path, person_path)
-    print(result)
-    with console.status("[bold cyan]生成人物立绘，请稍候…[/]", spinner="dots"):
-        console.print(f"角色共 {len(result.persons)} 个")
-        image_generator_agent(result.persons, prefix=label)
-    with console.status("[bold cyan]生成场景，请稍候…[/]", spinner="dots"):
-        console.print(f"场景共 {len(result.scenes)} 个")
-        scene_generator_agent(result.scenes, prefix=label)
-    with console.status("[bold cyan]生成音乐，请稍候…[/]", spinner="dots"):
-        console.print(f"音乐共 {len(result.music)} 个")
-        music_gen(result.music, prefix=label)
+    print(result.persons)
+    console.print(f"角色共 {len(result.persons)} 个")
+    image_generator_agent(result.persons, prefix=label)
+    console.print(f"场景共 {len(result.scenes)} 个")
+    scene_generator_agent(result.scenes, prefix=label)
+    console.print(f"音乐共 {len(result.music)} 个")
+    music_gen(result.music, prefix=label)
     convert_script(script_path)
+    # 根据说话人情况调整人物位置
+    tag_by_dialogue(script_path, script_path)
+    concat(script_path, Path("head.rpy"), script_path)
