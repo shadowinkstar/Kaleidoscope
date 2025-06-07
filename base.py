@@ -103,7 +103,6 @@ def parse_novel_txt(path: str = "", context: str = "") -> List[Chapter]:
     else:
         with open(path, "r", encoding="utf-8") as f:
             novel_name = path.split(".")[0]
-            print(path.split("."))
             novel_text = f.read()
             soup = BeautifulSoup(novel_text, "lxml")
             if soup.find("novel") and soup.find("novel").text: # type: ignore
@@ -327,7 +326,7 @@ def extract_info_from_script(script_path: Path, person_path: Path, script: str =
     return result
 
 # 调用大模型生成人物立绘文生图的提示词然后调用文生图工具并查看生成图像进行图生图优化
-def image_generator_agent(persons: List[dict], prefix: str) -> None:
+def image_generator_agent(persons: List[dict], prefix: str, server: str = "http://127.0.0.1:8188") -> None:
     """
     该智能体可以根据人物信息生成对应的立绘
     Args:
@@ -351,7 +350,7 @@ def image_generator_agent(persons: List[dict], prefix: str) -> None:
         print(f"人物 {person['name']} 的提示词生成结果：{response.content}")
         result = extract_json(response)
         print(f"正在为人物 {person['name']} 生成立绘...")
-        img_path = run_comfy_workflow(positive=result["positive"], negative=result["negative"], prefix=prefix)
+        img_path = run_comfy_workflow(server=server, positive=result["positive"], negative=result["negative"], prefix=prefix)
         person_img_path = img_path.with_name(f"{person['name']}.png")
         img_path.rename(person_img_path)
         print(f"人物 {person['name']} 的立绘生成成功，图片路径为：{person_img_path}")
@@ -370,7 +369,7 @@ def image_generator_agent(persons: List[dict], prefix: str) -> None:
             print(f"人物 {person['name']} 标签 {label} 的提示词生成结果：{response.content}")
             result = extract_json(response)
             print(f"正在为人物 {person['name']} 标签 {label} 生成立绘...")
-            label_img_path = run_img2img_workflow(input_image=str(person_img_path.resolve()), positive=result["positive"], negative=result["negative"], prefix=prefix)
+            label_img_path = run_img2img_workflow(server=server, input_image=str(person_img_path.resolve()), positive=result["positive"], negative=result["negative"], prefix=prefix)
             person_label_img_path = img_path.with_name(f"{person['name']} {label}.png")
             label_img_path.rename(person_label_img_path)
             print(f"人物 {person['name']} 标签 {label} 的立绘生成成功，图片路径为：{person_label_img_path}")
@@ -393,7 +392,7 @@ def image_generator_agent(persons: List[dict], prefix: str) -> None:
         #     print(f"人物 {person['name']} 的立绘修改成功，图片路径为：{update_img_path}")
 
 # 调用大模型生成场景图片，采用1280x720分辨率生成背景
-def scene_generator_agent(scenes: List[str], prefix: str) -> None:
+def scene_generator_agent(scenes: List[str], prefix: str, server: str = "http://127.0.0.1:8188") -> None:
     """
     该智能体可以根据场景信息生成对应的背景图
     Args:
@@ -418,14 +417,14 @@ def scene_generator_agent(scenes: List[str], prefix: str) -> None:
         print(f"场景 {scene} 的提示词生成结果：{response.content}")
         result = extract_json(response)
         print(f"正在为场景 {scene} 生成背景图...")
-        img_path = run_comfy_workflow(positive=result["positive"], negative=result["negative"], width=910, height=512, prefix=prefix)
+        img_path = run_comfy_workflow(server=server, positive=result["positive"], negative=result["negative"], width=910, height=512, prefix=prefix)
         # 使用编号为场景名称的图片名称
         scene_img_path = img_path.with_name(f"bg {scenes.index(scene)}.png")
         img_path.rename(scene_img_path)
         print(f"场景 {scene} 的背景图生成成功，图片路径为：{scene_img_path}")
 
 # 背景音乐生成
-def music_gen(musics: List[str], prefix: str) -> None:
+def music_gen(musics: List[str], prefix: str, server: str = "http://127.0.0.1:8188") -> None:
     """从每一章节的脚本中生成适合的音乐
 
     Args:
@@ -443,7 +442,7 @@ def music_gen(musics: List[str], prefix: str) -> None:
         print(f"生成音乐提示词的LLM结果：{response}")
         result = extract_json(response)
         if result:
-            music_path = run_audio_workflow(prefix=prefix, positive=result["positive"], negative=result["negative"])
+            music_path = run_audio_workflow(server=server, prefix=prefix, positive=result["positive"], negative=result["negative"])
             result_path = music_path.with_name(f"{index}.mp3")
             music_path.rename(result_path)
             print(f"[green][b]音乐生成完成！结果保存在：{result_path}[/b][/green]")
