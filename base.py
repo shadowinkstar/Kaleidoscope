@@ -1,7 +1,6 @@
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from rich import print
 from typing import List, Optional, Union, Pattern
 from pydantic import BaseModel, Field
 from langchain_core.documents import Document
@@ -10,7 +9,7 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from bs4 import BeautifulSoup
 import time, re, json, base64
-from loguru import logger
+from log_config import logger
 from prompt import EXTRACT_PERSON_PROMPT, GENERATE_SCRIPT_PROMPT
 from img import run_comfy_workflow, run_img2img_workflow, remove_background
 from datetime import datetime
@@ -200,7 +199,7 @@ def generate_person(chapter_document: Document, llm: ChatOpenAI, person_list: Li
     try:
         result = extract_json(chain.invoke({"text": chapter_document.page_content, "person_list": input_person_list}))
     except Exception as e:
-        print(f"提取人物出现错误{e}，直接返回空")
+        logger.error(f"提取人物出现错误{e}，直接返回空")
         return []
     logger.info(f"{chapter_document.page_content[:10].strip()}...{chapter_document.page_content[-10:].strip()}提取人物结果：\n{result}")
     result_person_list = person_list.copy()
@@ -285,7 +284,7 @@ def extract_info_from_script(script_path: Path, person_path: Path, script: str =
     # 使用正则表达式提取<person>标签中的内容
     person_pattern = r"<person>(.*?)</person>"
     persons = re.findall(person_pattern, script)
-    print(f"提取到的人物信息：{persons}")
+    logger.debug(f"提取到的人物信息：{persons}")
     conflit_persons = []
     for i in persons:
         name, label = i.split(" ")
@@ -300,8 +299,8 @@ def extract_info_from_script(script_path: Path, person_path: Path, script: str =
                     if label not in person["labels"]:
                         person["labels"].append(label)
                     break
-    print(f"冲突人物信息：{conflit_persons}")
-    print(f"当前人物信息：{person_list}")
+    logger.debug(f"冲突人物信息：{conflit_persons}")
+    logger.debug(f"当前人物信息：{person_list}")
     
     # 处理冲突人物信息，即脚本中出现没有正常提取的人物
     for newbie in conflit_persons:
@@ -318,7 +317,7 @@ def extract_info_from_script(script_path: Path, person_path: Path, script: str =
     # 使用正则表达式提取<scene>标签中的内容
     scene_pattern = r"<scene>(.*?)</scene>"
     scenes = re.findall(scene_pattern, script)
-    print(f"提取到的场景信息：{scenes}")
+    logger.debug(f"提取到的场景信息：{scenes}")
     result.scenes = scenes
     
     # 提取脚本中每一章节的内容
@@ -341,7 +340,7 @@ def image_generator_agent(persons: List[dict], prefix: str, server: str = "http:
     Returns:
         不返回内容，把生成的图片放置在指定路径即可
     """
-    print(persons)
+    logger.debug(f"待生成人物列表: {persons}")
     for person in persons:
         text2img_message = HumanMessage(
             content=[
@@ -351,21 +350,21 @@ def image_generator_agent(persons: List[dict], prefix: str, server: str = "http:
                     JSON格式返回提示词：```json\n{{'positive': '正面提示词，使用逗号分隔的多个句子', 'negative': '负面提示词，使用逗号分隔的多个句子'}}\n```\n，人物的信息如下{}".format(json.dumps(person))}
             ]
         )
-        print(f"正在为人物 {person['name']} 生成提示词...")
+        logger.info(f"正在为人物 {person['name']} 生成提示词...")
         response = llm.invoke([text2img_message])
-        print(f"人物 {person['name']} 的提示词生成结果：{response.content}")
+        logger.debug(f"人物 {person['name']} 的提示词生成结果：{response.content}")
         try:
             result = extract_json(response)
         except:
-            print(f"正在为人物 {person['name']} 生成提示词...")
+            logger.info(f"正在为人物 {person['name']} 生成提示词...")
             response = llm.invoke([text2img_message])
-            print(f"人物 {person['name']} 的提示词生成结果：{response.content}")
+            logger.debug(f"人物 {person['name']} 的提示词生成结果：{response.content}")
             try:
                 result = extract_json(response)
             except Exception as e:
-                print(f"[red][b]重试后提示词生成结果解析失败:[/b] {e}")
+                logger.error(f"重试后提示词生成结果解析失败: {e}")
                 result = {"positive": person["decription"], "negative": ""}
-        print(f"正在为人物 {person['name']} 生成立绘...")
+        logger.info(f"正在为人物 {person['name']} 生成立绘...")
         img_path = run_comfy_workflow(server=server, positive=result["positive"], negative=result["negative"], prefix=prefix) # type: ignore
         if img_path:
             person_img_path = img_path.with_name(f"{person['name']}.png")
@@ -374,10 +373,10 @@ def image_generator_agent(persons: List[dict], prefix: str, server: str = "http:
             remove_background(person_img_path, person_img_path)
         else:
             raise Exception("图片生成失败")
-        print(f"人物 {person['name']} 的立绘生成成功，图片路径为：{person_img_path}")
+        logger.info(f"人物 {person['name']} 的立绘生成成功，图片路径为：{person_img_path}")
         # 开始针对不同的label生成一系列立绘
         for label in person["labels"]:
-            print(f"正在为人物 {person['name']} 生成标签 {label} 的提示词...")
+            logger.info(f"正在为人物 {person['name']} 生成标签 {label} 的提示词...")
             text2img_message = HumanMessage(
                 content=[
                     {"type": "text", "text": f"我会给你提供一个人物的信息，然后你需要结合提供的人物信息与人物现在的标签生成一个使用FLUX-dev模型的图生图提示词，这个提示词应当具备正面提示词与负面提示词两个部分的内容，以更好地把现有图片立绘修改为符合人物标签描述的立绘。\
@@ -387,18 +386,18 @@ def image_generator_agent(persons: List[dict], prefix: str, server: str = "http:
                 ]
             )
             response = llm.invoke([text2img_message])
-            print(f"人物 {person['name']} 标签 {label} 的提示词生成结果：{response.content}")
+            logger.debug(f"人物 {person['name']} 标签 {label} 的提示词生成结果：{response.content}")
             try:
                 label_result = extract_json(response)
             except:
                 response = llm.invoke([text2img_message])
-                print(f"人物 {person['name']} 标签 {label} 的提示词生成结果：{response.content}")
+                logger.debug(f"人物 {person['name']} 标签 {label} 的提示词生成结果：{response.content}")
                 try:
                     label_result = extract_json(response)
                 except Exception as e:
-                    print(f"[red][b]重新生成提示词失败:[/b] {e}")
+                    logger.error(f"重新生成提示词失败: {e}")
                     label_result = {"positive": f"{result['positive']}, {label}", "negative": f"{result['negative']}"} # type: ignore
-            print(f"正在为人物 {person['name']} 标签 {label} 生成立绘...")
+            logger.info(f"正在为人物 {person['name']} 标签 {label} 生成立绘...")
             label_img_path = run_img2img_workflow(server=server, input_image=str(person_img_path.resolve()), positive=label_result["positive"], negative=label_result["negative"], prefix=prefix) # type: ignore
             if label_img_path:
                 person_label_img_path = label_img_path.with_name(f"{person['name']} {label}.png")
@@ -407,7 +406,7 @@ def image_generator_agent(persons: List[dict], prefix: str, server: str = "http:
                 remove_background(person_label_img_path, person_label_img_path)
             else:
                 raise Exception("图片生成失败")
-            print(f"人物 {person['name']} 标签 {label} 的立绘生成成功，图片路径为：{person_label_img_path}")
+            logger.info(f"人物 {person['name']} 标签 {label} 的立绘生成成功，图片路径为：{person_label_img_path}")
         # base64_image = encode_image(img_path)
         # img2img_message = HumanMessage(
         #     content=[
@@ -447,16 +446,16 @@ def scene_generator_agent(scenes: List[str], prefix: str, server: str = "http://
             ]
         )
         previous_scene = scene
-        print(f"正在为场景 {scene} 生成提示词...")
+        logger.info(f"正在为场景 {scene} 生成提示词...")
         response = llm.invoke([text2img_message])
-        print(f"场景 {scene} 的提示词生成结果：{response.content}")
+        logger.debug(f"场景 {scene} 的提示词生成结果：{response.content}")
         result = extract_json(response)
-        print(f"正在为场景 {scene} 生成背景图...")
+        logger.info(f"正在为场景 {scene} 生成背景图...")
         img_path = run_comfy_workflow(server=server, positive=result["positive"], negative=result["negative"], width=910, height=512, prefix=prefix)
         # 使用编号为场景名称的图片名称
         scene_img_path = img_path.with_name(f"bg {scenes.index(scene)}.png")
         img_path.rename(scene_img_path)
-        print(f"场景 {scene} 的背景图生成成功，图片路径为：{scene_img_path}")
+        logger.info(f"场景 {scene} 的背景图生成成功，图片路径为：{scene_img_path}")
 
 # 背景音乐生成
 def music_gen(musics: List[str], prefix: str, server: str = "http://127.0.0.1:8188") -> None:
@@ -474,7 +473,7 @@ def music_gen(musics: List[str], prefix: str, server: str = "http://127.0.0.1:81
                 请注意这个背景音乐需要在脚本演绎时播放，因此你需要考虑什么样子的音乐适合，我初步考虑是尽量不要有人声的，负面提示词简要描写即可，要求不多。请你使用如下的\
                 JSON格式返回提示词：```json\n{{'positive': '正面提示词，使用逗号分隔的多个句子', 'negative': '负面提示词，使用逗号分隔的多个句子'}}\n```\n，当前脚本章节信息如下{music}"
         response = llm.invoke(prompt)
-        print(f"生成音乐提示词的LLM结果：{response}")
+        logger.debug(f"生成音乐提示词的LLM结果：{response}")
         result = extract_json(response)
         if result:
             music_path = run_audio_workflow(server=server, prefix=prefix, positive=result["positive"], negative=result["negative"], duration=60.0) # type: ignore
@@ -483,7 +482,7 @@ def music_gen(musics: List[str], prefix: str, server: str = "http://127.0.0.1:81
                 music_path.rename(result_path)
             else:
                 raise Exception("音乐生成失败")
-            print(f"[green][b]音乐生成完成！结果保存在：{result_path}[/b][/green]")
+            logger.info(f"音乐生成完成，结果保存在：{result_path}")
             
 # 脚本转化 TODO: 处理脚本中各种语法问题，在生成结束后保证下限
 def convert_script(script_path: Path) -> None:
@@ -496,7 +495,7 @@ def convert_script(script_path: Path) -> None:
     console = Console()
     with open(script_path, "r", encoding="utf-8") as f:
         script_content = f.read()
-        print(f"[bold cyan]正在转化脚本：{script_path}[/]")
+        logger.info(f"正在转化脚本：{script_path}")
         with console.status("[bold cyan]正在转化角色名...[/]", spinner="dots"):
             person_pattern = r"<person>(.*?)</person>"
             persons = re.findall(person_pattern, script_content)
@@ -515,11 +514,11 @@ def convert_script(script_path: Path) -> None:
             for index, title in enumerate(titles):
                 script_content = replace_first(script_content, f"<chapter>{title}</chapter>", f"play music {index}")
             console.print(f"[green]转化音乐描述完成![/green]")
-    print(f"开始写入输出文档")
+    logger.info("开始写入输出文档")
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("label start:\n    ")
         f.write(script_content.replace("\n", "\n    "))
-    print(f"[green]输出文档已保存到：{output_path}[/green]")
+    logger.info(f"输出文档已保存到：{output_path}")
 
 def tag_by_dialogue(src: Path, dst: Path) -> None:
     order_many = ["middle", "left", "right", "left", "right"]

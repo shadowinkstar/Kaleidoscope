@@ -1,7 +1,7 @@
 import json, uuid, time, requests, pathlib
 from typing import Optional
-from rich import print
 from rich.console import Console
+from log_config import logger
 
 console = Console()
 
@@ -41,14 +41,13 @@ def run_comfy_workflow(
     try:
         resp = requests.post(f"{server}/prompt", json=payload, timeout=30)
         result = resp.json()
-        print("[yellow][b]ComfyUI /prompt 返回：[/b][/yellow]")
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+        logger.debug("ComfyUI /prompt 返回：\n{}", json.dumps(result, indent=2, ensure_ascii=False))
         if "error" in result:
-            print("[red][b]ComfyUI /prompt 接口报错，流程终止！[/b][/red]")
+            logger.error("ComfyUI /prompt 接口报错，流程终止！")
             return None
         prompt_id = result["prompt_id"]
     except Exception as e:
-        print(f"[red][b]提交 /prompt 失败:[/b] {e}")
+        logger.error(f"提交 /prompt 失败:{e}")
         return None
 
     # ---------- 4. 轮询 /history ----------
@@ -77,12 +76,12 @@ def run_comfy_workflow(
 
     # ---------- 5. 解析图片文件名（兼容多种结构） ----------
     fname = None
-    print(outputs)
+    logger.debug(outputs)
     if isinstance(outputs, dict):
         node = outputs.get(str(save_node_id))
         if node and "images" in node and node["images"]:
             fname = node["images"][0]["filename"]
-            print(f"[yellow]从节点 {save_node_id} 获取到图片文件名：{fname}[/yellow]")
+            logger.debug(f"从节点 {save_node_id} 获取到图片文件名：{fname}")
     elif isinstance(outputs, list) and outputs:
         img = outputs[0]
         if isinstance(img, dict) and "filename" in img:
@@ -90,7 +89,7 @@ def run_comfy_workflow(
         elif isinstance(img, str):
             fname = img
     if not fname:
-        print(f"[red]未找到输出文件名，请检查 outputs 字段实际内容！[/red]")
+        logger.error("未找到输出文件名，请检查 outputs 字段实际内容！")
         return None
 
     # ---------- 6. 下载图片 ----------
@@ -100,10 +99,10 @@ def run_comfy_workflow(
         out_dir.mkdir(exist_ok=True, parents=True)
         out_path = out_dir / pathlib.Path(fname).name
         out_path.write_bytes(img_bytes)
-        print(f"[green]图片已保存到：{out_path}[/green]")
+        logger.info(f"图片已保存到：{out_path}")
         return out_path
     except Exception as e:
-        print(f"[red]图片下载失败：{e}[/red]")
+        logger.error(f"图片下载失败：{e}")
         return None
 
 def run_img2img_workflow(
@@ -182,14 +181,13 @@ def run_img2img_workflow(
     try:
         resp = requests.post(f"{server}/prompt", json=payload, timeout=30)
         result = resp.json()
-        print("[yellow][b]ComfyUI /prompt 返回：[/b][/yellow]")
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+        logger.debug("ComfyUI /prompt 返回：\n{}", json.dumps(result, indent=2, ensure_ascii=False))
         if "error" in result:
-            print("[red][b]ComfyUI /prompt 接口报错，流程终止！[/b][/red]")
+            logger.error("ComfyUI /prompt 接口报错，流程终止！")
             return None
         prompt_id = result["prompt_id"]
     except Exception as e:
-        print(f"[red][b]提交 /prompt 失败:[/b] {e}")
+        logger.error(f"提交 /prompt 失败:{e}")
         return None
 
         # ---------- 4. 轮询 /history ----------
@@ -228,17 +226,17 @@ def run_img2img_workflow(
 
     # ---------- 5. 解析图片文件名 ----------
     fname = None
-    print(f"[blue]输出结果：[/blue]")
-    print(outputs)
+    logger.debug("输出结果：")
+    logger.debug(outputs)
     
     if isinstance(outputs, dict):
         node = outputs.get(str(save_node_id))
         if node and "images" in node and node["images"]:
             fname = node["images"][0]["filename"]
-            print(f"[yellow]从节点 {save_node_id} 获取到图片文件名：{fname}[/yellow]")
+            logger.debug(f"从节点 {save_node_id} 获取到图片文件名：{fname}")
     
     if not fname:
-        print(f"[red]未找到输出文件名，请检查 outputs 字段实际内容！[/red]")
+        logger.error("未找到输出文件名，请检查 outputs 字段实际内容！")
         return None
 
     # ---------- 6. 下载图片 ----------
@@ -248,10 +246,10 @@ def run_img2img_workflow(
         out_dir.mkdir(exist_ok=True, parents=True)
         out_path = out_dir / pathlib.Path(fname).name
         out_path.write_bytes(img_bytes)
-        print(f"[green]图生图结果已保存到：{out_path}[/green]")
+        logger.info(f"图生图结果已保存到：{out_path}")
         return out_path
     except Exception as e:
-        print(f"[red]图片下载失败：{e}[/red]")
+        logger.error(f"图片下载失败：{e}")
         return None
 
 # 去除人物图片背景
@@ -269,9 +267,9 @@ def remove_background(image_path: str, output_path: str):
         input = Image.open(image_path)
         output = remove(input)
         output.save(output_path) # type: ignore
-        print(f"[green]背景移除成功，结果保存在：{output_path}[/green]")
+        logger.info(f"背景移除成功，结果保存在：{output_path}")
     except Exception as e:
-        print(f"[red]背景移除失败：{e}[/red]")
+        logger.error(f"背景移除失败：{e}")
 
 
 if __name__ == "__main__":
@@ -289,7 +287,7 @@ if __name__ == "__main__":
     # print("\n" + "="*50 + "\n")
     
     # 新增的图生图示例
-    print("[cyan][b]=== 图生图示例 ===[/b][/cyan]")
+    logger.info("=== 图生图示例 ===")
     img2img_result = run_img2img_workflow(
         prefix="demo",
         workflow_path="comfyui_workflows/flux_img2img.json",  # 使用你提供的JSON工作流
@@ -306,9 +304,9 @@ if __name__ == "__main__":
     )
     
     if img2img_result:
-        print(f"[green][b]图生图处理完成！结果保存在：{img2img_result}[/b][/green]")
+        logger.info(f"图生图处理完成！结果保存在：{img2img_result}")
     else:
-        print("[red][b]图生图处理失败！[/b][/red]")
+        logger.error("图生图处理失败！")
     
     # 测试背景移除功能
     # print("\n" + "="*50 + "\n")
