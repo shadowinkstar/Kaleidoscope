@@ -317,6 +317,8 @@ def extract_info_from_script(script_path: Path, person_path: Path, script: str =
     # 使用正则表达式提取<scene>标签中的内容
     scene_pattern = r"<scene>(.*?)</scene>"
     scenes = re.findall(scene_pattern, script)
+    # 由于场景重复，进行去重
+    scenes = list(set(scenes))
     logger.debug(f"提取到的场景信息：{scenes}")
     result.scenes = scenes
     
@@ -505,8 +507,10 @@ def convert_script(script_path: Path) -> None:
         with console.status("[bold cyan]正在转化背景描述...[/]", spinner="dots"):
             scene_pattern = r"<scene>(.*?)</scene>"
             scenes = re.findall(scene_pattern, script_content)
-            for index, scene in enumerate(scenes):
-                script_content = replace_first(script_content, f"<scene>{scene}</scene>", f"scene bg {index}")
+            # 创建去重参考列表
+            scene_refs = list(set(scenes))
+            for scene in scenes:
+                script_content = replace_first(script_content, f"<scene>{scene}</scene>", f"scene bg {scene_refs.index(scene)}")
             console.print(f"[green]转化背景描述完成![/green]")
         with console.status("[bold cyan]转化音乐描述中，请稍候…[/]", spinner="dots"):
             title_pattern = r"<chapter>(.*?)</chapter>"
@@ -623,8 +627,8 @@ if __name__ == "__main__":
     person_path = Path(f"outputs/{label}/person.json")
     result = extract_info_from_script(script_path, person_path)
     # print(result.persons)
-    console.print(f"角色共 {len(result.persons)} 个")
-    image_generator_agent(result.persons, prefix=label)
+    # console.print(f"角色共 {len(result.persons)} 个")
+    # image_generator_agent(result.persons, prefix=label)
     console.print(f"场景共 {len(result.scenes)} 个")
     scene_generator_agent(result.scenes, prefix=label)
     console.print(f"音乐共 {len(result.music)} 个")
