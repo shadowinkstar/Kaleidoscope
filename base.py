@@ -17,7 +17,7 @@ from pathlib import Path
 from audio import run_audio_workflow
 from rich.console import Console
 from collections import Counter
-import shutil
+import shutil, tempfile
 
 
 load_dotenv()
@@ -89,17 +89,20 @@ def parse_novel_txt(path: str = "", context: str = "") -> List[Chapter]:
             logger.warning("小说名称未识别，使用默认名称")
             novel_name = f"在时间{time.strftime('%Y-%m-%d %H:%M:%S')}传入小说"
         chapters = soup.find_all("chapter")
+        if chapters == []:
+            logger.warning("小说章节未识别，使用全文")
+            chapters = [soup]
         for chapter in chapters:
             if chapter.find("content") and chapter.find("content").text: # type: ignore
                 content = chapter.find("content").text # type: ignore
             else:
-                logger.warning("章节内容识别失败，跳过该章节")
-                continue
+                logger.warning("章节内容识别失败，全文作为一整个章节")
+                content = chapter.text
             if chapter.find("title") and chapter.find("title").text: # type: ignore
                 title = chapter.find("title").text # type: ignore
             else:
                 logger.warning("章节标题识别失败，使用该章节前10个字符作为标题")
-                title = content[:10]
+                title = content[:10].strip()
             chapters_result.append(Chapter(title=title, content=content, novel_name=novel_name)) # type: ignore
     else:
         with open(path, "r", encoding="utf-8") as f:
@@ -481,18 +484,21 @@ def music_gen(musics: List[str], prefix: str, server: str = "http://127.0.0.1:81
         if result:
             music_path = run_audio_workflow(server=server, prefix=prefix, positive=result["positive"], negative=result["negative"], duration=60.0) # type: ignore
             if music_path:
-                result_path = music_path.with_name(f"{index}.mp3")
+                result_path = music_path.with_name(f"music{index}.mp3")
                 music_path.rename(result_path)
             else:
                 raise Exception("音乐生成失败")
             logger.info(f"音乐生成完成，结果保存在：{result_path}")
             
 # 脚本转化 TODO: 处理脚本中各种语法问题，在生成结束后保证下限
-def convert_script(script_path: Path) -> None:
+def convert_script(script_path: Path) -> Path:
     """把带有xml标签的脚本转化为renpy格式脚本
 
     Args:
         script_path (Path): 给定的脚本路径
+    
+    Returns:
+        Path: 转换后的脚本路径
     """
     output_path = script_path.with_name("script").with_suffix(".rpy")
     console = Console()
@@ -517,13 +523,14 @@ def convert_script(script_path: Path) -> None:
             title_pattern = r"<chapter>(.*?)</chapter>"
             titles = re.findall(title_pattern, script_content)
             for index, title in enumerate(titles):
-                script_content = replace_first(script_content, f"<chapter>{title}</chapter>", f"play music {index}")
+                script_content = replace_first(script_content, f"<chapter>{title}</chapter>", f"play music music{index}")
             console.print(f"[green]转化音乐描述完成![/green]")
     logger.info("开始写入输出文档")
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("label start:\n    ")
         f.write(script_content.replace("\n", "\n    "))
     logger.info(f"输出文档已保存到：{output_path}")
+    return output_path
 
 def tag_by_dialogue(src: Path, dst: Path) -> None:
     order_many = ["middle", "left", "right", "left", "right"]
@@ -570,71 +577,97 @@ def tag_by_dialogue(src: Path, dst: Path) -> None:
             out.append(ln)
 
     Path(dst).write_text("\n".join(out), encoding="utf-8")
-def concat(dst: Path, *srcs: Path) -> None:
-    with dst.open("wb") as w:
-        for src in srcs:
+
+def concat(dst: Path, *srcs: Path, chunk: int = 1 << 20) -> None:
+    """
+    顺序把 *srcs 内容写入 dst。
+    - 若 dst 也在 srcs：先写入同目录临时文件，再原子替换回 dst。
+    - 流式复制，默认块大小 1 MiB，可用 chunk 调整。
+    """
+    dst = Path(dst).resolve()
+
+    # 统一把 srcs 转成 list[Path]，避免类型警告
+    src_paths: list[Path] = [p.resolve() for p in srcs]
+
+    # 如果目标文件也在输入列表，使用临时文件中转
+    need_tmp = dst in src_paths
+    target = dst
+
+    if need_tmp:
+        tmp = tempfile.NamedTemporaryFile(delete=False,
+                                          dir=dst.parent,
+                                          suffix=".tmp")
+        tmp.close()                    # 关闭句柄，交给 Path 使用
+        target = Path(tmp.name)
+
+    # 逐块拷贝
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("wb") as w:
+        for src in src_paths:
             with src.open("rb") as r:
-                shutil.copyfileobj(r, w)   # 块拷贝
+                shutil.copyfileobj(r, w, length=chunk)
+
+    # 如用中转文件，则原子替换回目标
+    if need_tmp:
+        target.replace(dst)
 
 if __name__ == "__main__":
     console = Console()
-    # file_path = "novels/乡村教师.txt"
-    # chapters = split_chapter(parse_novel_txt(path=file_path))
-    # # print(chapters)
-    # for chapter in chapters:
-    #     # print(chapter.title)
-    #     for chunk in chapter.chunks:
-    #         pass
-    # result = ""
-    # person_list = []
-    # # 增加rich加载
-    # start_time = time.time()
-    # with console.status("[bold cyan]小说脚本与人物 正在生成，请稍候…[/]", spinner="dots"):
-    #     for chapter in chapters:
-    #         # 在每一章开始时，增加一个标记，用来准备音乐生成
-    #         result += f"\n<chapter>{chapter.title}</chapter>\n"
-    #         for chunk in chapter.chunks:
-    #             person_list = generate_person(chunk, llm, person_list)
-    #             result += generate_script(chunk, llm, person_list, previous_script=result) + "\n"
-    #     console.print(f"最终人物：{person_list}")
-    #     console.print(f"最终脚本：{result[:1000]}...")  # 只打印前1000个字符
-    #     console.print(f"[bold green]小说脚本与人物生成完成！用时{time.time() - start_time:.2f}秒[/]")
-    # date = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    # label = Path(file_path).name.split(".")[0] + f"_{date}"  # 获取文件名加时间作为标签
-    # # 在这里写一下预期的输出路径结构
-    # # 脚本输出路径：outputs/{label}/script.txt
-    # # 人物输出路径：outputs/{label}/person.json
-    # # 图片输出路径：outputs/{label}/images/xxx.png
-    # # 音频输出路径：outputs/{label}/audio/xxx.mp3
-    # base_dir = Path("outputs") / label            # outputs/<label> 目录
-    # base_dir.mkdir(parents=True, exist_ok=True)   # 若不存在则递归创建
+    file_path = "novels/乡村教师.txt"
+    chapters = split_chapter(parse_novel_txt(path=file_path))
+    # print(chapters)
+    result = ""
+    person_list = []
+    # 增加rich加载
+    start_time = time.time()
+    with console.status("[bold cyan]小说脚本与人物 正在生成，请稍候…[/]", spinner="dots"):
+        for chapter in chapters:
+            # 在每一章开始时，增加一个标记，用来准备音乐生成
+            result += f"\n<chapter>{chapter.title}</chapter>\n"
+            for chunk in chapter.chunks: # type: ignore
+                person_list = generate_person(chunk, llm, person_list)
+                result += generate_script(chunk, llm, person_list, previous_script=result) + "\n"
+        console.print(f"最终人物：{person_list}")
+        console.print(f"最终脚本：{result[:1000]}...")  # 只打印前1000个字符
+        console.print(f"[bold green]小说脚本与人物生成完成！用时{time.time() - start_time:.2f}秒[/]")
+    date = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    label = Path(file_path).name.split(".")[0] + f"_{date}"  # 获取文件名加时间作为标签
+    # 在这里写一下预期的输出路径结构
+    # 脚本输出路径：outputs/{label}/script.txt
+    # 人物输出路径：outputs/{label}/person.json
+    # 图片输出路径：outputs/{label}/images/xxx.png
+    # 音频输出路径：outputs/{label}/audio/xxx.mp3
+    base_dir = Path("outputs") / label            # outputs/<label> 目录
+    base_dir.mkdir(parents=True, exist_ok=True)   # 若不存在则递归创建
 
-    # script_path = base_dir / "script.txt"
-    # person_path = base_dir / "person.json"
+    script_path = base_dir / "script.txt"
+    person_path = base_dir / "person.json"
 
-    # # —— 1. 追加写入脚本 ——  
-    # with script_path.open("a", encoding="utf-8") as f:  # append 模式
-    #     f.write(result)
+    # —— 1. 追加写入脚本 ——  
+    with script_path.open("a", encoding="utf-8") as f:  # append 模式
+        f.write(result)
 
-    # # —— 2. 覆盖写入人物信息 ——  
-    # person_json = json.dumps(
-    #     [p.model_dump() for p in person_list],
-    #     ensure_ascii=False,
-    #     indent=4
-    # )
-    # person_path.write_text(person_json, encoding="utf-8")
+    # —— 2. 覆盖写入人物信息 ——  
+    person_json = json.dumps(
+        [p.model_dump() for p in person_list],
+        ensure_ascii=False,
+        indent=4
+    )
+    person_path.write_text(person_json, encoding="utf-8")
     label = "乡村教师_2025-06-08-01-07-48"
     script_path = Path(f"outputs/{label}/script.txt")
     person_path = Path(f"outputs/{label}/person.json")
+    output_path = Path(f"outputs/{label}/script.rpy")
     result = extract_info_from_script(script_path, person_path)
-    # print(result.persons)
-    # console.print(f"角色共 {len(result.persons)} 个")
-    # image_generator_agent(result.persons, prefix=label)
+    print(result.music)
+    console.print(f"角色共 {len(result.persons)} 个")
+    image_generator_agent(result.persons, prefix=label)
     console.print(f"场景共 {len(result.scenes)} 个")
     scene_generator_agent(result.scenes, prefix=label)
     console.print(f"音乐共 {len(result.music)} 个")
     music_gen(result.music, prefix=label)
-    convert_script(script_path)
+    output_path = convert_script(script_path)
     # 根据说话人情况调整人物位置
-    tag_by_dialogue(script_path, script_path)
-    concat(script_path, Path("head.rpy"), script_path)
+    
+    tag_by_dialogue(output_path, output_path)
+    concat(output_path, Path("head.rpy"), output_path)
