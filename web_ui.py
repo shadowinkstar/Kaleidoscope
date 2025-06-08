@@ -97,7 +97,7 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
     else:
         yield "开始解析文档..."
         chapters = split_chapter(parse_novel_txt(path=file))
-        yield f"共识别到 {len(chapters)} 个章节"
+        yield f"共识别到 {len(chapters)} 个章节，共 {sum([len(c.chunks) for c in chapters])} 片段"
 
         yield "开始生成人物信息与脚本..."
         start_time = time.time()
@@ -134,7 +134,7 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
         yield "生成人物立绘..."
         person_num = len(info.persons)
         labels = sum(len(p["labels"]) for p in info.persons)
-        yield f"角色共 {person_num} 个，标签共 {labels} 个，共计 {person_num + labels} 张图片，预计用时{(person_num + labels) * 15}秒"
+        yield f"角色共 {person_num} 个，标签共 {labels} 个，共计 {person_num + labels} 张图片，预计用时{(person_num + labels) * 20}秒"
         start_time = time.time()
         image_generator_agent(
             info.persons,
@@ -150,7 +150,7 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
     if progress.get("step") == "scenes":
         yield "生成场景图..."
         scene_num = len(info.scenes)
-        yield f"场景共 {scene_num} 个，共 {scene_num} 张图片，预计用时{scene_num * 15}秒"
+        yield f"场景共 {scene_num} 个，共 {scene_num} 张图片，预计用时{scene_num * 25}秒"
         start_time = time.time()
         scene_generator_agent(
             info.scenes,
@@ -166,7 +166,7 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
     if progress.get("step") == "music":
         yield "生成音乐..."
         music_num = len(info.music)
-        yield f"音乐共 {music_num} 个，共 {music_num} 个音乐文件，预计用时{music_num * 12}秒"
+        yield f"音乐共 {music_num} 个，共 {music_num} 个音乐文件，预计用时{music_num * 15}秒"
         start_time = time.time()
         music_gen(
             info.music,
