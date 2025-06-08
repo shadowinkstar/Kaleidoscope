@@ -19,6 +19,8 @@ from base import (
     convert_script,
     concat,
     tag_by_dialogue,
+    load_progress,
+    save_progress,
     Person,
 )
 
@@ -38,6 +40,7 @@ LANG_CONTENT = {
         "upload": "Upload XML text divided by <chapter> tags",
         "run": "Start Conversion",
         "settings": "Settings",
+        "resume": "Resume Label",
         "base_url": "LLM Base URL",
         "api_key": "API Key",
         "model_name": "Model Name",
@@ -60,6 +63,7 @@ LANG_CONTENT = {
         "upload": "上传使用 <chapter> 标签划分章节的 XML 文本",
         "run": "开始转换",
         "settings": "配置",
+        "resume": "重启标签",
         "base_url": "LLM 接口地址",
         "api_key": "API 密钥",
         "model_name": "模型名称",
@@ -278,6 +282,7 @@ def build_interface() -> gr.Blocks:
                     type="messages",
                 )
                 file = gr.File(label=LANG_CONTENT["en"]["upload"])
+                resume = gr.Textbox(label=LANG_CONTENT["en"]["resume"], value="")
                 gr.Examples(examples=examples, inputs=file)
                 run_btn = gr.Button(LANG_CONTENT["en"]["run"])
 
@@ -301,6 +306,7 @@ def build_interface() -> gr.Blocks:
                 new_lang,
                 gr.update(value=content["intro"]),
                 gr.update(label=content["upload"]),
+                gr.update(label=content["resume"]),
                 gr.update(value=content["run"]),
                 gr.update(label=content["base_url"]),
                 gr.update(label=content["api_key"]),
@@ -317,6 +323,7 @@ def build_interface() -> gr.Blocks:
                 lang_state,
                 intro,
                 file,
+                resume,
                 run_btn,
                 base_url,
                 api_key,
@@ -329,7 +336,7 @@ def build_interface() -> gr.Blocks:
 
         run_btn.click(
             ui_process,
-            [file, base_url, api_key, model_name, comfy_server, chatbot],
+            [file, resume, base_url, api_key, model_name, comfy_server, chatbot],
             chatbot,
         )
     return demo
