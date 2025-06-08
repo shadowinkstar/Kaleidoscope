@@ -19,7 +19,7 @@ transform charbox:
 # 三个站位 —— 用“transform-expression”引入 charbox，再额外设 xalign
 transform char_left:
     charbox          # ← 关键：单独一行即可继承
-    xalign 0.20
+    xalign 0.10
 
 transform char_center:
     charbox
@@ -27,5 +27,5 @@ transform char_center:
 
 transform char_right:
     charbox
-    xalign 0.80
+    xalign 0.90
 
