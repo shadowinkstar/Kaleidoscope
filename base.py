@@ -459,7 +459,16 @@ def scene_generator_agent(scenes: List[str], prefix: str, server: str = "http://
         logger.info(f"正在为场景 {scene} 生成提示词...")
         response = llm.invoke([text2img_message])
         logger.debug(f"场景 {scene} 的提示词生成结果：{response.content}")
-        result = extract_json(response)
+        try:
+            result = extract_json(response)
+        except:
+            logger.warning(f"场景 {scene} 的提示词生成结果解析失败！重新生成...")
+            response = llm.invoke([text2img_message])
+            try:
+                result = extract_json(response)
+            except Exception as e:
+                logger.error(f"场景 {scene} 的提示词生成结果解析失败！{e}")
+                result = {"positive": scene, "negative": ""}
         logger.info(f"正在为场景 {scene} 生成背景图...")
         img_path = run_comfy_workflow(server=server, positive=result["positive"], negative=result["negative"], width=910, height=512, prefix=prefix) # type: ignore
         # 使用编号为场景名称的图片名称
@@ -485,7 +494,16 @@ def music_gen(musics: List[str], prefix: str, server: str = "http://127.0.0.1:81
                 JSON格式返回提示词：```json\n{{'positive': '正面提示词，使用逗号分隔的多个句子', 'negative': '负面提示词，使用逗号分隔的多个句子'}}\n```\n，当前脚本章节信息如下{music}"
         response = llm.invoke(prompt)
         logger.debug(f"生成音乐提示词的LLM结果：{response}")
-        result = extract_json(response)
+        try:
+            result = extract_json(response)
+        except:
+            logger.warning("LLM返回结果不是有效的JSON格式，重新生成！")
+            respomse = llm.invoke(prompt)
+            try:
+                result = extract_json(response)
+            except Exception as e:
+                logger.error(f"LLM返回结果不是有效的JSON格式：{e}")
+                result = {"positive": "Soft music, Piano, Peaceful", "negative": ""}
         if result:
             music_path = run_audio_workflow(server=server, prefix=prefix, positive=result["positive"], negative=result["negative"], duration=60.0) # type: ignore
             if music_path:
