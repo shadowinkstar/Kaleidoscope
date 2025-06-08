@@ -227,8 +227,12 @@ def generate_person(chapter_document: Document, llm: ChatOpenAI, person_list: Li
     try:
         result = extract_json(chain.invoke({"text": chapter_document.page_content, "person_list": input_person_list}))
     except Exception as e:
-        logger.error(f"提取人物出现错误{e}，直接返回空")
-        return []
+        logger.warning(f"提取人物出现错误{e}，首先重试一次")
+        try:
+            result = extract_json(chain.invoke({"text": chapter_document.page_content, "person_list": input_person_list}))
+        except Exception as e:
+            logger.warning(f"重试失败，人物生成失败，直接返回[]")
+            result = []
     logger.info(f"{chapter_document.page_content[:10].strip()}...{chapter_document.page_content[-10:].strip()}提取人物结果：\n{result}")
     result_person_list = person_list.copy()
     # 使用模型输出的result更新人物列表
