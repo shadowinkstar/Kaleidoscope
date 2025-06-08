@@ -152,8 +152,13 @@ def ui_process(
         yield history
 
 
-def show_file(path: str):
+def show_file(path: str | list[str]):
     """Show different file types based on extension."""
+    if isinstance(path, list):
+        if not path:
+            path = ""
+        else:
+            path = path[0]
     if not path:
         return (
             gr.update(visible=False),
