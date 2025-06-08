@@ -67,67 +67,72 @@ class Chapter(BaseModel):
     novel_name: str = Field(description="章节来源的小说名称")
     
 
-# 处理文本
-def parse_novel_txt(path: str = "", context: str = "") -> List[Chapter]:
+def parse_novel_txt(path: Optional[Path] = None, context: str = "") -> List[Chapter]:
     """
-    处理小说文本，将小说文本切分成章节，并返回识别的章节列表，这里暂时不涉及到智能的章节划分，
-    使用自定义的xml标签进行识别划分
-    :param path: 小说文本路径
+    处理小说文本，将小说文本切分成章节，并返回识别的章节列表。
+    如果检测不到任何自定义 XML 标签，则把整篇文本当作单一章节处理。
+    :param path: 小说文本路径（Path 对象）
     :param context: 或者直接传入小说文本内容
     :return: 识别出的小说章节列表
     """
-    if context != "" and path != "":
-        raise ValueError("path和context不能同时传入")
-    # 最终输出列表
-    chapters_result = []
-    if context:
-        novel_text = context
-        soup = BeautifulSoup(novel_text, "lxml")
-        if soup.find("novel") and soup.find("novel").text: # type: ignore
-            novel_name = soup.find("novel").text # type: ignore
-        else:
-            logger.warning("小说名称未识别，使用默认名称")
-            novel_name = f"在时间{time.strftime('%Y-%m-%d %H:%M:%S')}传入小说"
-        chapters = soup.find_all("chapter")
-        if chapters == []:
-            logger.warning("小说章节未识别，使用全文")
-            chapters = [soup]
-        for chapter in chapters:
-            if chapter.find("content") and chapter.find("content").text: # type: ignore
-                content = chapter.find("content").text # type: ignore
-            else:
-                logger.warning("章节内容识别失败，全文作为一整个章节")
-                content = chapter.text
-            if chapter.find("title") and chapter.find("title").text: # type: ignore
-                title = chapter.find("title").text # type: ignore
-            else:
-                logger.warning("章节标题识别失败，使用该章节前10个字符作为标题")
-                title = content[:10].strip()
-            chapters_result.append(Chapter(title=title, content=content, novel_name=novel_name)) # type: ignore
-    else:
-        with open(path, "r", encoding="utf-8") as f:
-            novel_name = path.split(".")[0]
-            novel_text = f.read()
-            soup = BeautifulSoup(novel_text, "lxml")
-            if soup.find("novel") and soup.find("novel").text: # type: ignore
-                # 优先采用文中标题
-                logger.warning("使用文本标题标签内容作为小说标题") 
-                novel_name = soup.find("novel").text # type: ignore
-            chapters = soup.find_all("chapter")
-            for chapter in chapters:
-                if chapter.find("content") and chapter.find("content").text: # type: ignore
-                    content = chapter.find("content").text # type: ignore
-                else:
-                    logger.warning("章节内容识别失败，跳过该章节")
-                    continue
-                if chapter.find("title") and chapter.find("title").text: # type: ignore
-                    title = chapter.find("title").text # type: ignore
-                else:
-                    logger.warning("章节标题识别失败，使用该章节前10个字符作为标题")
-                    title = content[:10]
-                chapters_result.append(Chapter(title=title, content=content, novel_name=novel_name)) # type: ignore
-    return chapters_result
+    if context and path:
+        raise ValueError("path 和 context 不能同时传入")
 
+    chapters_result: List[Chapter] = []
+
+    # 公共章节提取逻辑
+    def _extract_chapters(soup: BeautifulSoup, novel_name: str) -> None:
+        # 若不存在 <chapter> 标签，直接把全文当作一个章节
+        chapters = soup.find_all("chapter") or [soup]
+
+        for chapter in chapters:
+            # content
+            content_tag = chapter.find("content")
+            content = (
+                content_tag.text
+                if content_tag and content_tag.text
+                else chapter.text
+            )
+
+            # title
+            title_tag = chapter.find("title")
+            title = (
+                title_tag.text
+                if title_tag and title_tag.text
+                else content[:10].strip()
+            )
+
+            chapters_result.append(
+                Chapter(title=title, content=content, novel_name=novel_name)  # type: ignore
+            )
+
+    # ---------- 1. context 直接传文本 ----------
+    if context:
+        soup = BeautifulSoup(context, "lxml")
+        novel_name = (
+            soup.find("novel").text
+            if soup.find("novel") and soup.find("novel").text # type: ignore
+            else f"在时间 {time.strftime('%Y-%m-%d %H:%M:%S')} 传入小说"
+        )
+        _extract_chapters(soup, novel_name)
+
+    # ---------- 2. path 读取文件 ----------
+    else:
+        if path is None:
+            raise ValueError("未提供 path 或 context")
+
+        # 确保为 Path 对象
+        path = Path(path)
+        soup = BeautifulSoup(path.read_text(encoding="utf-8"), "lxml")
+
+        novel_name = path.stem
+        if soup.find("novel") and soup.find("novel").text:
+            logger.warning("使用文本标题标签内容作为小说标题")
+            novel_name = soup.find("novel").text
+
+        _extract_chapters(soup, novel_name)
+
+    return chapters_result
 def split_chapter(chapters: List[Chapter], chunk_size: int = 4000, overlap: int = 200) -> List[Chapter]:
     """
     将章节内容切分成Document对象，并返回
@@ -533,7 +538,7 @@ def convert_script(script_path: Path) -> Path:
     return output_path
 
 def tag_by_dialogue(src: Path, dst: Path) -> None:
-    order_many = ["middle", "left", "right", "left", "right"]
+    order_many = ["char_center", "char_left", "char_right", "char_left", "char_right"]
     lines = src.read_text(encoding="utf-8").splitlines()
     out, i, n = [], 0, len(lines)
 
@@ -557,11 +562,11 @@ def tag_by_dialogue(src: Path, dst: Path) -> None:
         tag_map = {}
 
         if len(uniq) == 1:
-            tag_map[uniq[0]] = "middle"
+            tag_map[uniq[0]] = "char_center"
         elif len(uniq) == 2:
             a, b = cnt.most_common()
-            tag_map[a[0]] = "left"
-            tag_map[b[0]] = "right"
+            tag_map[a[0]] = "char_left"
+            tag_map[b[0]] = "char_right"
         else:
             for idx, (name, _) in enumerate(cnt.most_common()):
                 tag_map[name] = order_many[idx % len(order_many)]
@@ -613,61 +618,61 @@ def concat(dst: Path, *srcs: Path, chunk: int = 1 << 20) -> None:
 
 if __name__ == "__main__":
     console = Console()
-    file_path = "novels/乡村教师.txt"
-    chapters = split_chapter(parse_novel_txt(path=file_path))
-    # print(chapters)
-    result = ""
-    person_list = []
-    # 增加rich加载
-    start_time = time.time()
-    with console.status("[bold cyan]小说脚本与人物 正在生成，请稍候…[/]", spinner="dots"):
-        for chapter in chapters:
-            # 在每一章开始时，增加一个标记，用来准备音乐生成
-            result += f"\n<chapter>{chapter.title}</chapter>\n"
-            for chunk in chapter.chunks: # type: ignore
-                person_list = generate_person(chunk, llm, person_list)
-                result += generate_script(chunk, llm, person_list, previous_script=result) + "\n"
-        console.print(f"最终人物：{person_list}")
-        console.print(f"最终脚本：{result[:1000]}...")  # 只打印前1000个字符
-        console.print(f"[bold green]小说脚本与人物生成完成！用时{time.time() - start_time:.2f}秒[/]")
-    date = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    label = Path(file_path).name.split(".")[0] + f"_{date}"  # 获取文件名加时间作为标签
-    # 在这里写一下预期的输出路径结构
-    # 脚本输出路径：outputs/{label}/script.txt
-    # 人物输出路径：outputs/{label}/person.json
-    # 图片输出路径：outputs/{label}/images/xxx.png
-    # 音频输出路径：outputs/{label}/audio/xxx.mp3
-    base_dir = Path("outputs") / label            # outputs/<label> 目录
-    base_dir.mkdir(parents=True, exist_ok=True)   # 若不存在则递归创建
+    # file_path = "novels/乡村教师.txt"
+    # chapters = split_chapter(parse_novel_txt(path=file_path))
+    # # print(chapters)
+    # result = ""
+    # person_list = []
+    # # 增加rich加载
+    # start_time = time.time()
+    # with console.status("[bold cyan]小说脚本与人物 正在生成，请稍候…[/]", spinner="dots"):
+    #     for chapter in chapters:
+    #         # 在每一章开始时，增加一个标记，用来准备音乐生成
+    #         result += f"\n<chapter>{chapter.title}</chapter>\n"
+    #         for chunk in chapter.chunks: # type: ignore
+    #             person_list = generate_person(chunk, llm, person_list)
+    #             result += generate_script(chunk, llm, person_list, previous_script=result) + "\n"
+    #     console.print(f"最终人物：{person_list}")
+    #     console.print(f"最终脚本：{result[:1000]}...")  # 只打印前1000个字符
+    #     console.print(f"[bold green]小说脚本与人物生成完成！用时{time.time() - start_time:.2f}秒[/]")
+    # date = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    # label = Path(file_path).name.split(".")[0] + f"_{date}"  # 获取文件名加时间作为标签
+    # # 在这里写一下预期的输出路径结构
+    # # 脚本输出路径：outputs/{label}/script.txt
+    # # 人物输出路径：outputs/{label}/person.json
+    # # 图片输出路径：outputs/{label}/images/xxx.png
+    # # 音频输出路径：outputs/{label}/audio/xxx.mp3
+    # base_dir = Path("outputs") / label            # outputs/<label> 目录
+    # base_dir.mkdir(parents=True, exist_ok=True)   # 若不存在则递归创建
 
-    script_path = base_dir / "script.txt"
-    person_path = base_dir / "person.json"
+    # script_path = base_dir / "script.txt"
+    # person_path = base_dir / "person.json"
 
-    # —— 1. 追加写入脚本 ——  
-    with script_path.open("a", encoding="utf-8") as f:  # append 模式
-        f.write(result)
+    # # —— 1. 追加写入脚本 ——  
+    # with script_path.open("a", encoding="utf-8") as f:  # append 模式
+    #     f.write(result)
 
-    # —— 2. 覆盖写入人物信息 ——  
-    person_json = json.dumps(
-        [p.model_dump() for p in person_list],
-        ensure_ascii=False,
-        indent=4
-    )
-    person_path.write_text(person_json, encoding="utf-8")
+    # # —— 2. 覆盖写入人物信息 ——  
+    # person_json = json.dumps(
+    #     [p.model_dump() for p in person_list],
+    #     ensure_ascii=False,
+    #     indent=4
+    # )
+    # person_path.write_text(person_json, encoding="utf-8")
     label = "乡村教师_2025-06-08-01-07-48"
-    script_path = Path(f"outputs/{label}/script.txt")
-    person_path = Path(f"outputs/{label}/person.json")
+    # script_path = Path(f"outputs/{label}/script.txt")
+    # person_path = Path(f"outputs/{label}/person.json")
     output_path = Path(f"outputs/{label}/script.rpy")
-    result = extract_info_from_script(script_path, person_path)
-    print(result.music)
-    console.print(f"角色共 {len(result.persons)} 个")
-    image_generator_agent(result.persons, prefix=label)
-    console.print(f"场景共 {len(result.scenes)} 个")
-    scene_generator_agent(result.scenes, prefix=label)
-    console.print(f"音乐共 {len(result.music)} 个")
-    music_gen(result.music, prefix=label)
-    output_path = convert_script(script_path)
+    # result = extract_info_from_script(script_path, person_path)
+    # print(result.music)
+    # console.print(f"角色共 {len(result.persons)} 个")
+    # image_generator_agent(result.persons, prefix=label)
+    # console.print(f"场景共 {len(result.scenes)} 个")
+    # scene_generator_agent(result.scenes, prefix=label)
+    # console.print(f"音乐共 {len(result.music)} 个")
+    # music_gen(result.music, prefix=label)
+    # output_path = convert_script(script_path)
     # 根据说话人情况调整人物位置
     
     tag_by_dialogue(output_path, output_path)
-    concat(output_path, Path("head.rpy"), output_path)
+    # concat(output_path, Path("head.rpy"), output_path)

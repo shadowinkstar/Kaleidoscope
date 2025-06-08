@@ -1,4 +1,4 @@
-import json
+import json, time
 import gradio as gr
 from pathlib import Path
 from datetime import datetime
@@ -17,6 +17,8 @@ from base import (
     scene_generator_agent,
     music_gen,
     convert_script,
+    concat,
+    tag_by_dialogue,
     Person,
 )
 
@@ -78,11 +80,14 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
         temperature=0.0,
         max_completion_tokens=8192,
     )
-
+    print(file)
+    
     yield "开始解析文档..."
-    chapters = split_chapter(parse_novel_txt(path=file.name))
+    chapters = split_chapter(parse_novel_txt(path=file))
     yield f"共识别到 {len(chapters)} 个章节"
 
+    yield "开始生成人物信息与脚本..."
+    start_time = time.time()
     result = ""
     person_list: list[Person] = []
     for chapter in chapters:
@@ -104,23 +109,35 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
         json.dumps([p.model_dump() for p in person_list], ensure_ascii=False, indent=4),
         encoding="utf-8",
     )
-    yield "脚本与人物生成完成"
+    yield f"脚本与人物生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}"
 
     info = extract_info_from_script(script_path, person_path)
     yield "生成人物立绘..."
+    person_num = len(info.persons)
+    labels = sum([len(p["labels"]) for p in info.persons])
+    yield f"角色共 {person_num} 个，标签共 {labels} 个，共计 {person_num + labels} 张图片，预计用时{(person_num + labels) * 15}秒"
+    start_time = time.time()
     image_generator_agent(info.persons, prefix=label, server=comfy_server)
-    yield "人物立绘生成完成"
+    yield f"人物立绘生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}/images/"
 
     yield "生成场景图..."
+    scene_num = len(info.scenes)
+    yield f"场景共 {scene_num} 个，共 {scene_num} 张图片，预计用时{(scene_num) * 15}秒"
+    start_time = time.time()
     scene_generator_agent(info.scenes, prefix=label, server=comfy_server)
-    yield "场景图生成完成"
+    yield f"场景图生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}/images/"
 
     yield "生成音乐..."
+    music_num = len(info.music)
+    yield f"音乐共 {music_num} 个，共 {music_num} 个音乐文件，预计用时{(music_num) * 12}秒"
+    start_time = time.time()
     music_gen(info.music, prefix=label, server=comfy_server)
-    yield "音乐生成完成"
+    yield f"音乐生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}/audio/"
 
-    convert_script(script_path)
-    yield f"全部完成，结果保存在 outputs/{label}"
+    output_path = convert_script(script_path)
+    tag_by_dialogue(output_path, output_path)
+    concat(output_path, Path("head.rpy"), output_path)
+    yield f"全部完成，最终脚本文件结果保存在 outputs/{label}/script.rpy"
 
 
 def ui_process(
@@ -133,17 +150,26 @@ def ui_process(
         yield history
 
 
-
-
+CUSTOM_CSS = """
+#mybot [data-testid="user"] {
+    background: #8b5cf6 !important;  /* 用户气泡 */
+    color: white !important;
+}
+#mybot [data-testid="assistant"] {
+    background: #10b981 !important;  /* 助手气泡 */
+    color: white !important;
+}
+/* 其他角色（system / tool / function）可继续加 */
+"""
 
 def build_interface() -> gr.Blocks:
-    examples = [str(p) for p in Path("novels").glob("*.txt")]
+    examples = [p.as_posix() for p in Path("novels").glob("*.txt")]
 
     theme = gr.themes.Soft(
         primary_hue="indigo", secondary_hue="rose", neutral_hue="slate"
     )
 
-    with gr.Blocks(title="Kaleidoscope", theme=theme) as demo:
+    with gr.Blocks(title="Kaleidoscope", theme=theme, css=CUSTOM_CSS) as demo:
         lang_state = gr.State("en")
         intro = gr.HTML(LANG_CONTENT["en"]["intro"])
         toggle_btn = gr.Button(LANG_CONTENT["en"]["toggle"])
@@ -163,9 +189,10 @@ def build_interface() -> gr.Blocks:
             )
 
         chatbot = gr.Chatbot(
+            [],                           # 初始历史
+            elem_id="mybot",              # 供 CSS 定位
             height=400,
-            color_map=["#8b5cf6", "#10b981", "#f97316"],
-            value=[],
+            type="messages",
         )
         file = gr.File(label=LANG_CONTENT["en"]["upload"])
         gr.Examples(examples=examples, inputs=file)
