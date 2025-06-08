@@ -69,8 +69,8 @@ LANG_CONTENT = {
     },
 }
 
-def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_server: str) -> Iterable[str]:
-    if file is None:
+def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_server: str, resume_label: str = "") -> Iterable[str]:
+    if file is None and not resume_label:
         yield "请上传小说文件"
         return
 
@@ -82,59 +82,98 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
         temperature=0.0,
         max_completion_tokens=8192,
     )
-    print(file)
-    
-    yield "开始解析文档..."
-    chapters = split_chapter(parse_novel_txt(path=file))
-    yield f"共识别到 {len(chapters)} 个章节"
 
-    yield "开始生成人物信息与脚本..."
-    start_time = time.time()
-    result = ""
-    person_list: list[Person] = []
-    for chapter in chapters:
-        result += f"\n<chapter>{chapter.title}</chapter>\n"
-        for chunk in chapter.chunks:
-            person_list = generate_person(chunk, llm, person_list)
-            script = generate_script(chunk, llm, person_list, previous_script=result)
-            result += script + "\n"
-            yield script
+    if resume_label:
+        label = resume_label
+        base_dir = Path("outputs") / label
+        if not base_dir.exists():
+            yield "指定标签不存在"
+            return
+        progress = load_progress(label)
+    else:
+        yield "开始解析文档..."
+        chapters = split_chapter(parse_novel_txt(path=file))
+        yield f"共识别到 {len(chapters)} 个章节"
 
-    date = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    label = Path(file.name).stem + f"_{date}"
-    base_dir = Path("outputs") / label
-    base_dir.mkdir(parents=True, exist_ok=True)
-    script_path = base_dir / "script.txt"
-    person_path = base_dir / "person.json"
-    script_path.write_text(result, encoding="utf-8")
-    person_path.write_text(
-        json.dumps([p.model_dump() for p in person_list], ensure_ascii=False, indent=4),
-        encoding="utf-8",
-    )
-    yield f"脚本与人物生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}"
+        yield "开始生成人物信息与脚本..."
+        start_time = time.time()
+        result = ""
+        person_list: list[Person] = []
+        for chapter in chapters:
+            result += f"\n<chapter>{chapter.title}</chapter>\n"
+            for chunk in chapter.chunks:
+                person_list = generate_person(chunk, llm, person_list)
+                script = generate_script(chunk, llm, person_list, previous_script=result)
+                result += script + "\n"
+                yield script
 
+        date = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        label = Path(file.name).stem + f"_{date}"
+        base_dir = Path("outputs") / label
+        base_dir.mkdir(parents=True, exist_ok=True)
+        script_path = base_dir / "script.txt"
+        person_path = base_dir / "person.json"
+        script_path.write_text(result, encoding="utf-8")
+        person_path.write_text(
+            json.dumps([p.model_dump() for p in person_list], ensure_ascii=False, indent=4),
+            encoding="utf-8",
+        )
+        progress = {"step": "images", "image_index": 0, "scene_index": 0, "music_index": 0}
+        save_progress(label, progress)
+        yield f"脚本与人物生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}"
+
+    script_path = Path("outputs") / label / "script.txt"
+    person_path = Path("outputs") / label / "person.json"
     info = extract_info_from_script(script_path, person_path)
-    yield "生成人物立绘..."
-    person_num = len(info.persons)
-    labels = sum([len(p["labels"]) for p in info.persons])
-    yield f"角色共 {person_num} 个，标签共 {labels} 个，共计 {person_num + labels} 张图片，预计用时{(person_num + labels) * 15}秒"
-    start_time = time.time()
-    image_generator_agent(info.persons, prefix=label, server=comfy_server)
-    yield f"人物立绘生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}/images/"
 
-    yield "生成场景图..."
-    scene_num = len(info.scenes)
-    yield f"场景共 {scene_num} 个，共 {scene_num} 张图片，预计用时{(scene_num) * 15}秒"
-    start_time = time.time()
-    scene_generator_agent(info.scenes, prefix=label, server=comfy_server)
-    yield f"场景图生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}/images/"
+    if progress.get("step") == "images":
+        yield "生成人物立绘..."
+        person_num = len(info.persons)
+        labels = sum(len(p["labels"]) for p in info.persons)
+        yield f"角色共 {person_num} 个，标签共 {labels} 个，共计 {person_num + labels} 张图片，预计用时{(person_num + labels) * 15}秒"
+        start_time = time.time()
+        image_generator_agent(
+            info.persons,
+            prefix=label,
+            server=comfy_server,
+            start_index=progress.get("image_index", 0),
+            progress_cb=lambda i: (progress.update({"image_index": i}), save_progress(label, progress)),
+        )
+        progress["step"] = "scenes"
+        save_progress(label, progress)
+        yield f"人物立绘生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}/images/"
 
-    yield "生成音乐..."
-    music_num = len(info.music)
-    yield f"音乐共 {music_num} 个，共 {music_num} 个音乐文件，预计用时{(music_num) * 12}秒"
-    start_time = time.time()
-    music_gen(info.music, prefix=label, server=comfy_server)
-    yield f"音乐生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}/audio/"
+    if progress.get("step") == "scenes":
+        yield "生成场景图..."
+        scene_num = len(info.scenes)
+        yield f"场景共 {scene_num} 个，共 {scene_num} 张图片，预计用时{scene_num * 15}秒"
+        start_time = time.time()
+        scene_generator_agent(
+            info.scenes,
+            prefix=label,
+            server=comfy_server,
+            start_index=progress.get("scene_index", 0),
+            progress_cb=lambda i: (progress.update({"scene_index": i}), save_progress(label, progress)),
+        )
+        progress["step"] = "music"
+        save_progress(label, progress)
+        yield f"场景图生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}/images/"
+
+    if progress.get("step") == "music":
+        yield "生成音乐..."
+        music_num = len(info.music)
+        yield f"音乐共 {music_num} 个，共 {music_num} 个音乐文件，预计用时{music_num * 12}秒"
+        start_time = time.time()
+        music_gen(
+            info.music,
+            prefix=label,
+            server=comfy_server,
+            start_index=progress.get("music_index", 0),
+            progress_cb=lambda i: (progress.update({"music_index": i}), save_progress(label, progress)),
+        )
+        progress["step"] = "done"
+        save_progress(label, progress)
+        yield f"音乐生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}/audio/"
 
     output_path = convert_script(script_path)
     tag_by_dialogue(output_path, output_path)
@@ -143,11 +182,11 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
 
 
 def ui_process(
-    file, base_url, api_key, model_name, comfy_server, history: list[dict]
+    file, resume, base_url, api_key, model_name, comfy_server, history: list[dict]
 ):
     """执行主流程并将输出追加到聊天记录中."""
 
-    for message in pipeline(file, base_url, api_key, model_name, comfy_server):
+    for message in pipeline(file, base_url, api_key, model_name, comfy_server, resume):
         history.append({"role": "assistant", "content": message})
         yield history
 

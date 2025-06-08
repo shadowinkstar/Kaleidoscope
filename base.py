@@ -19,6 +19,8 @@ from rich.console import Console
 from collections import Counter
 import shutil, tempfile
 
+PROGRESS_NAME = "progress.json"
+
 
 load_dotenv()
 
@@ -45,6 +47,24 @@ vision_llm = ChatOpenAI(
 def encode_image(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode("utf-8")
+
+
+def load_progress(prefix: str) -> dict:
+    """Load progress information from outputs/<prefix>/progress.json."""
+    p = Path("outputs") / prefix / PROGRESS_NAME
+    if p.exists():
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def save_progress(prefix: str, progress: dict) -> None:
+    """Save progress to outputs/<prefix>/progress.json."""
+    p = Path("outputs") / prefix
+    p.mkdir(parents=True, exist_ok=True)
+    (p / PROGRESS_NAME).write_text(json.dumps(progress, ensure_ascii=False, indent=2), encoding="utf-8")
 
 def replace_first(
     text: str,
@@ -341,7 +361,13 @@ def extract_info_from_script(script_path: Path, person_path: Path, script: str =
     return result
 
 # 调用大模型生成人物立绘文生图的提示词然后调用文生图工具并查看生成图像进行图生图优化
-def image_generator_agent(persons: List[dict], prefix: str, server: str = "http://127.0.0.1:8188") -> None:
+def image_generator_agent(
+    persons: List[dict],
+    prefix: str,
+    server: str = "http://127.0.0.1:8188",
+    start_index: int = 0,
+    progress_cb=None,
+) -> None:
     """
     该智能体可以根据人物信息生成对应的立绘
     Args:
@@ -351,73 +377,72 @@ def image_generator_agent(persons: List[dict], prefix: str, server: str = "http:
         不返回内容，把生成的图片放置在指定路径即可
     """
     logger.debug(f"待生成人物列表: {persons}")
-    for person in persons:
-        text2img_message = HumanMessage(
-            content=[
-                {"type": "text", "text": "我会给你提供一个人物的信息，然后你需要结合人物信息生成一个使用FLUX-dev模型的文生图提示词，这个提示词应当具备正面提示词与负面提示词两个部分的内容，以更好地生成符合人物描述的立绘。\
-                    请使用简洁清晰的英文短句来构建提示词，注意你可以扩展提供的人物描述，并且结合人物描述中的经历等构造出一个人物形象的描述，不要涉及太多人物性格等描述，并且重心放在人物描述上面，减少对画面背景的描写。请尽量详细描写正面提示词，\
-                    尽量从各种角度完善人物形象，控制在10句以上；而负面提示词尽量使用那些有利于图像生成的常见负面提示词，并且针对人物形象做出适应的改变。请你使用如下的\
-                    JSON格式返回提示词：```json\n{{'positive': '正面提示词，使用逗号分隔的多个句子', 'negative': '负面提示词，使用逗号分隔的多个句子'}}\n```\n，人物的信息如下{}".format(json.dumps(person))}
-            ]
-        )
-        logger.info(f"正在为人物 {person['name']} 生成提示词...")
-        response = llm.invoke([text2img_message])
-        logger.debug(f"人物 {person['name']} 的提示词生成结果：{response.content}")
-        try:
-            result = extract_json(response)
-        except:
+    for p in persons:
+        flat.append((p, None))
+        for lb in p.get("labels", []):
+            flat.append((p, lb))
+
+    images_dir = Path("outputs") / prefix / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+
+    for idx, (person, lb) in enumerate(flat[start_index:], start=start_index):
+        if lb is None:
+            text2img_message = HumanMessage(
+                content=[
+                    {"type": "text", "text": "我会给你提供一个人物的信息，然后你需要结合人物信息生成一个使用FLUX-dev模型的文生图提示词，这个提示词应当具备正面提示词与负面提示词两个部分的内容，以更好地生成符合人物描述的立绘。\n                        请使用简洁清晰的英文短句来构建提示词，注意你可以扩展提供的人物描述，并且结合人物描述中的经历等构造出一个人物形象的描述，不要涉及太多人物性格等描述，并且重心放在人物描述上面，减少对画面背景的描写。请尽量详细描写正面提示词，\n                        尽量从各种角度完善人物形象，控制在10句以上；而负面提示词尽量使用那些有利于图像生成的常见负面提示词，并且针对人物形象做出适应的改变。请你使用如下的\n                        JSON格式返回提示词：```json\n{{'positive': '正面提示词，使用逗号分隔的多个句子', 'negative': '负面提示词，使用逗号分隔的多个句子'}}\n```\n，人物的信息如下{}".format(json.dumps(person))}
+                ]
+            )
             logger.info(f"正在为人物 {person['name']} 生成提示词...")
             response = llm.invoke([text2img_message])
             logger.debug(f"人物 {person['name']} 的提示词生成结果：{response.content}")
             try:
                 result = extract_json(response)
-            except Exception as e:
-                logger.error(f"重试后提示词生成结果解析失败: {e}")
-                result = {"positive": person["decription"], "negative": ""}
-        logger.info(f"正在为人物 {person['name']} 生成立绘...")
-        img_path = run_comfy_workflow(server=server, positive=result["positive"], negative=result["negative"], prefix=prefix) # type: ignore
-        if img_path:
-            person_img_path = img_path.with_name(f"{person['name']}.png")
-            img_path.rename(person_img_path)
-            # 去除人物背景
-            remove_background(person_img_path, person_img_path)
+            except Exception:
+                logger.info(f"正在为人物 {person['name']} 重新生成提示词...")
+                response = llm.invoke([text2img_message])
+                try:
+                    result = extract_json(response)
+                except Exception as e:
+                    logger.error(f"重试后提示词生成结果解析失败: {e}")
+                    result = {"positive": person.get('description', ''), "negative": ""}
+            logger.info(f"正在为人物 {person['name']} 生成立绘...")
+            img_path = run_comfy_workflow(server=server, positive=result["positive"], negative=result["negative"], prefix=prefix)
+            if img_path:
+                person_img_path = images_dir / f"{person['name']}.png"
+                img_path.rename(person_img_path)
+                remove_background(person_img_path, person_img_path)
+            else:
+                raise Exception("图片生成失败")
+            logger.info(f"人物 {person['name']} 的立绘生成成功，图片路径为：{person_img_path}")
         else:
-            raise Exception("图片生成失败")
-        logger.info(f"人物 {person['name']} 的立绘生成成功，图片路径为：{person_img_path}")
-        # 开始针对不同的label生成一系列立绘
-        for label in person["labels"]:
-            logger.info(f"正在为人物 {person['name']} 生成标签 {label} 的提示词...")
+            base_img = images_dir / f"{person['name']}.png"
             text2img_message = HumanMessage(
                 content=[
-                    {"type": "text", "text": f"我会给你提供一个人物的信息，然后你需要结合提供的人物信息与人物现在的标签生成一个使用FLUX-dev模型的图生图提示词，这个提示词应当具备正面提示词与负面提示词两个部分的内容，以更好地把现有图片立绘修改为符合人物标签描述的立绘。\
-                        请使用简洁清晰的英文短句来构建提示词，注意你要根据人物的标签内容（可能很简短），在原有提示词的基础上设计一套新的提示词，重心放在人物如何与标签对应上面，以求更加准确地修改图像；\
-                        而负面提示词尽量使用那些有利于图像生成的常见负面提示词，并且针对人物形象做出适应的改变。请你使用如下的\
-                        JSON格式返回提示词：```json\n{{'positive': '正面提示词，使用逗号分隔的多个句子', 'negative': '负面提示词，使用逗号分隔的多个句子'}}\n```\n，人物的信息如下{json.dumps(person)}，之前生成立绘的提示词为{json.dumps(result)}，生成的人物立绘需要满足新的标签{label}，请在提示词中充分体现这个标签的内容。"}
+                    {"type": "text", "text": f"我会给你提供一个人物的信息，然后你需要结合提供的人物信息与人物现在的标签生成一个使用FLUX-dev模型的图生图提示词，这个提示词应当具备正面提示词与负面提示词两个部分的内容，以更好地把现有图片立绘修改为符合人物标签描述的立绘。\n                        请使用简洁清晰的英文短句来构建提示词，注意你要根据人物的标签内容（可能很简短），在原有提示词的基础上设计一套新的提示词，重心放在人物如何与标签对应上面，以求更加准确地修改图像；\n                        而负面提示词尽量使用那些有利于图像生成的常见负面提示词，并且针对人物形象做出适应的改变。请你使用如下的\n                        JSON格式返回提示词：```json\n{{'positive': '正面提示词，使用逗号分隔的多个句子', 'negative': '负面提示词，使用逗号分隔的多个句子'}}\n```\n，人物的信息如下{json.dumps(person)}，之前生成立绘的提示词为空，生成的人物立绘需要满足新的标签{lb}，请在提示词中充分体现这个标签的内容."}
                 ]
             )
             response = llm.invoke([text2img_message])
-            logger.debug(f"人物 {person['name']} 标签 {label} 的提示词生成结果：{response.content}")
+            logger.debug(f"人物 {person['name']} 标签 {lb} 的提示词生成结果：{response.content}")
             try:
                 label_result = extract_json(response)
-            except:
+            except Exception:
                 response = llm.invoke([text2img_message])
-                logger.debug(f"人物 {person['name']} 标签 {label} 的提示词生成结果：{response.content}")
                 try:
                     label_result = extract_json(response)
                 except Exception as e:
                     logger.error(f"重新生成提示词失败: {e}")
-                    label_result = {"positive": f"{result['positive']}, {label}", "negative": f"{result['negative']}"} # type: ignore
-            logger.info(f"正在为人物 {person['name']} 标签 {label} 生成立绘...")
-            label_img_path = run_img2img_workflow(server=server, input_image=str(person_img_path.resolve()), positive=label_result["positive"], negative=label_result["negative"], prefix=prefix) # type: ignore
+                    label_result = {"positive": lb, "negative": ""}
+            logger.info(f"正在为人物 {person['name']} 标签 {lb} 生成立绘...")
+            label_img_path = run_img2img_workflow(server=server, input_image=str(base_img.resolve()), positive=label_result["positive"], negative=label_result["negative"], prefix=prefix)
             if label_img_path:
-                person_label_img_path = label_img_path.with_name(f"{person['name']} {label}.png")
+                person_label_img_path = images_dir / f"{person['name']} {lb}.png"
                 label_img_path.rename(person_label_img_path)
-                # 背景移除
                 remove_background(person_label_img_path, person_label_img_path)
             else:
                 raise Exception("图片生成失败")
-            logger.info(f"人物 {person['name']} 标签 {label} 的立绘生成成功，图片路径为：{person_label_img_path}")
-        # base64_image = encode_image(img_path)
+            logger.info(f"人物 {person['name']} 标签 {lb} 的立绘生成成功，图片路径为：{person_label_img_path}")
+        if progress_cb:
+            progress_cb(idx + 1)
         # img2img_message = HumanMessage(
         #     content=[
         #         {"type": "text", "text": f"下面的图片是一个人物立绘，请查看这张图片是否符合如下人物描述：{json.dumps(person)}\n如果符合，请回复'是'，如果不符合，请根据人物描述修改提示词，使用\
@@ -436,7 +461,13 @@ def image_generator_agent(persons: List[dict], prefix: str, server: str = "http:
         #     print(f"人物 {person['name']} 的立绘修改成功，图片路径为：{update_img_path}")
 
 # 调用大模型生成场景图片，采用1280x720分辨率生成背景
-def scene_generator_agent(scenes: List[str], prefix: str, server: str = "http://127.0.0.1:8188") -> None:
+def scene_generator_agent(
+    scenes: List[str],
+    prefix: str,
+    server: str = "http://127.0.0.1:8188",
+    start_index: int = 0,
+    progress_cb=None,
+) -> None:
     """
     该智能体可以根据场景信息生成对应的背景图
     Args:
@@ -446,7 +477,7 @@ def scene_generator_agent(scenes: List[str], prefix: str, server: str = "http://
         None
     """
     previous_scene = ""
-    for scene in scenes:
+    for idx, scene in enumerate(scenes[start_index:], start=start_index):
         text2img_message = HumanMessage(
             content=[
                 {"type": "text", "text": f"我会给你提供一个小说描写的场景信息以及这个场景的上一个场景，然后你需要结合当前场景信息以及上一个场景，生成一个使用FLUX-dev模型的文生图提示词，这个提示词应当具备正面提示词与负面提示词两个部分的内容，以更好地生成符合场景描述的背景图。\
@@ -476,16 +507,24 @@ def scene_generator_agent(scenes: List[str], prefix: str, server: str = "http://
             scene_img_path = img_path.with_name(f"bg {scenes.index(scene)}.png")
             img_path.rename(scene_img_path)
         logger.info(f"场景 {scene} 的背景图生成成功，图片路径为：{scene_img_path}")
+        if progress_cb:
+            progress_cb(idx + 1)
 
 # 背景音乐生成
-def music_gen(musics: List[str], prefix: str, server: str = "http://127.0.0.1:8188") -> None:
+def music_gen(
+    musics: List[str],
+    prefix: str,
+    server: str = "http://127.0.0.1:8188",
+    start_index: int = 0,
+    progress_cb=None,
+) -> None:
     """从每一章节的脚本中生成适合的音乐
 
     Args:
         musics (List[str]): 需求生成音乐的章节内容
         prefix (str): 最终存储位置
     """
-    for index, music in enumerate(musics):
+    for index, music in enumerate(musics[start_index:], start=start_index):
         if music.strip() == "":
             continue  # TODO: 处理空行！
         prompt = f"我会给你提供一篇视觉小说脚本，然后你需要结合提供的脚本内容，生成一个使用stable-audio模型的音乐生成提示词，这个提示词应当具备正面提示词与负面提示词两个部分的内容，以更好地生成适合脚本演绎的背景音乐。\
@@ -512,6 +551,8 @@ def music_gen(musics: List[str], prefix: str, server: str = "http://127.0.0.1:81
             else:
                 raise Exception("音乐生成失败")
             logger.info(f"音乐生成完成，结果保存在：{result_path}")
+            if progress_cb:
+                progress_cb(index + 1)
             
 # 脚本转化 TODO: 处理脚本中各种语法问题，在生成结束后保证下限
 def convert_script(script_path: Path) -> Path:
