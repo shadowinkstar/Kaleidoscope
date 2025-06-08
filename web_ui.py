@@ -42,6 +42,7 @@ LANG_CONTENT = {
         "api_key": "API Key",
         "model_name": "Model Name",
         "comfy_server": "ComfyUI Server",
+        "outputs": "Outputs",
         "toggle": "切换到中文",
     },
     "zh": {
@@ -63,6 +64,7 @@ LANG_CONTENT = {
         "api_key": "API 密钥",
         "model_name": "模型名称",
         "comfy_server": "ComfyUI 地址",
+        "outputs": "查看结果",
         "toggle": "Switch to English",
     },
 }
@@ -150,6 +152,41 @@ def ui_process(
         yield history
 
 
+def show_file(path: str):
+    """Show different file types based on extension."""
+    if not path:
+        return (
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(visible=False),
+        )
+    p = Path(path)
+    ext = p.suffix.lower()
+    if ext in {".txt", ".json", ".rpy"}:
+        return (
+            gr.update(value=p.read_text(encoding="utf-8"), visible=True),
+            gr.update(visible=False),
+            gr.update(visible=False),
+        )
+    if ext in {".png", ".jpg", ".jpeg", ".gif"}:
+        return (
+            gr.update(visible=False),
+            gr.update(value=p.as_posix(), visible=True),
+            gr.update(visible=False),
+        )
+    if ext in {".mp3", ".wav", ".ogg"}:
+        return (
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(value=p.as_posix(), visible=True),
+        )
+    return (
+        gr.update(value="Unsupported file type", visible=True),
+        gr.update(visible=False),
+        gr.update(visible=False),
+    )
+
+
 CUSTOM_CSS = """
 #mybot [data-testid="user"] {
     background: #8b5cf6 !important;  /* 用户气泡 */
@@ -171,32 +208,47 @@ def build_interface() -> gr.Blocks:
 
     with gr.Blocks(title="Kaleidoscope", theme=theme, css=CUSTOM_CSS) as demo:
         lang_state = gr.State("en")
-        intro = gr.HTML(LANG_CONTENT["en"]["intro"])
-        toggle_btn = gr.Button(LANG_CONTENT["en"]["toggle"])
+        with gr.Tabs() as tabs:
+            with gr.TabItem("Main"):
+                intro = gr.HTML(LANG_CONTENT["en"]["intro"])
+                toggle_btn = gr.Button(LANG_CONTENT["en"]["toggle"])
 
-        with gr.Accordion(LANG_CONTENT["en"]["settings"], open=False) as cfg:
-            base_url = gr.Textbox(
-                label=LANG_CONTENT["en"]["base_url"],
-                value="https://dashscope.aliyuncs.com/compatible-mode/v1",
-            )
-            api_key = gr.Textbox(label=LANG_CONTENT["en"]["api_key"], type="password")
-            model_name = gr.Textbox(
-                label=LANG_CONTENT["en"]["model_name"], value="deepseek-v3"
-            )
-            comfy_server = gr.Textbox(
-                label=LANG_CONTENT["en"]["comfy_server"],
-                value="http://127.0.0.1:8188",
-            )
+                with gr.Accordion(LANG_CONTENT["en"]["settings"], open=False) as cfg:
+                    base_url = gr.Textbox(
+                        label=LANG_CONTENT["en"]["base_url"],
+                        value="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                    )
+                    api_key = gr.Textbox(label=LANG_CONTENT["en"]["api_key"], type="password")
+                    model_name = gr.Textbox(
+                        label=LANG_CONTENT["en"]["model_name"], value="deepseek-v3"
+                    )
+                    comfy_server = gr.Textbox(
+                        label=LANG_CONTENT["en"]["comfy_server"],
+                        value="http://127.0.0.1:8188",
+                    )
 
-        chatbot = gr.Chatbot(
-            [],                           # 初始历史
-            elem_id="mybot",              # 供 CSS 定位
-            height=400,
-            type="messages",
-        )
-        file = gr.File(label=LANG_CONTENT["en"]["upload"])
-        gr.Examples(examples=examples, inputs=file)
-        run_btn = gr.Button(LANG_CONTENT["en"]["run"])
+                chatbot = gr.Chatbot(
+                    [],                           # 初始历史
+                    elem_id="mybot",              # 供 CSS 定位
+                    height=400,
+                    type="messages",
+                )
+                file = gr.File(label=LANG_CONTENT["en"]["upload"])
+                gr.Examples(examples=examples, inputs=file)
+                run_btn = gr.Button(LANG_CONTENT["en"]["run"])
+
+            with gr.TabItem(LANG_CONTENT["en"]["outputs"]):
+                with gr.Row():
+                    explorer = gr.FileExplorer(root_dir="outputs", height=400)
+                    with gr.Column():
+                        text_view = gr.Textbox(label="Text", lines=20, interactive=False, visible=False)
+                        image_view = gr.Image(label="Image", visible=False)
+                        audio_view = gr.Audio(label="Audio", interactive=False, visible=False)
+                explorer.change(
+                    show_file,
+                    explorer,
+                    [text_view, image_view, audio_view],
+                )
 
         def toggle_language(current_lang):
             new_lang = "zh" if current_lang == "en" else "en"
