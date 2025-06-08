@@ -377,6 +377,7 @@ def image_generator_agent(
         不返回内容，把生成的图片放置在指定路径即可
     """
     logger.debug(f"待生成人物列表: {persons}")
+    flat = []
     for p in persons:
         flat.append((p, None))
         for lb in p.get("labels", []):
