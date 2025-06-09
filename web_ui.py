@@ -310,9 +310,7 @@ CUSTOM_CSS = """
 def build_interface() -> gr.Blocks:
     examples = [p.as_posix() for p in Path("novels").glob("*.txt")]
 
-    theme = gr.themes.Soft(
-        primary_hue="indigo", secondary_hue="rose", neutral_hue="slate"
-    )
+    theme = gr.themes.Monochrome()
 
     with gr.Blocks(title="Kaleidoscope", theme=theme, css=CUSTOM_CSS) as demo:
         lang_state = gr.State("en")
