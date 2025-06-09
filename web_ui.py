@@ -4,6 +4,8 @@ from pathlib import Path
 from datetime import datetime
 from typing import Iterable
 
+from log_config import get_logs
+
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 
@@ -239,13 +241,22 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
 
 
 def ui_process(
-    file, resume, base_url, api_key, model_name, comfy_server, history: list[dict]
+    file,
+    resume,
+    base_url,
+    api_key,
+    model_name,
+    comfy_server,
+    history: list[dict],
+    log_pos: int,
 ):
-    """执行主流程并将输出追加到聊天记录中."""
+    """执行主流程并将输出追加到聊天记录中，并同步日志."""
 
     for message in pipeline(file, base_url, api_key, model_name, comfy_server, resume):
         history.append({"role": "assistant", "content": message})
-        yield history
+        logs = get_logs(log_pos)
+        log_pos += len(logs)
+        yield history, "\n".join(logs), log_pos
 
 
 def show_file(path: str | list[str]):
@@ -367,6 +378,8 @@ def build_interface() -> gr.Blocks:
                     height=400,
                     type="messages",
                 )
+                log_box = gr.Textbox(label="Logs", lines=10, interactive=False)
+                log_state = gr.State(0)
                 file = gr.File(label=LANG_CONTENT["en"]["upload"])
                 resume = gr.Textbox(label=LANG_CONTENT["en"]["resume"], value="")
                 gr.Examples(examples=examples, inputs=file)
@@ -442,8 +455,8 @@ def build_interface() -> gr.Blocks:
 
         run_btn.click(
             ui_process,
-            [file, resume, base_url, api_key, model_name, comfy_server, chatbot],
-            chatbot,
+            [file, resume, base_url, api_key, model_name, comfy_server, chatbot, log_state],
+            [chatbot, log_box, log_state],
         )
     return demo
 def main():
