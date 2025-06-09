@@ -1,5 +1,9 @@
 # Kaleidoscope
 
+## Video Introduction
+
+For now you can watch the video introduction on [capcut](https://www.capcut.cn/share/7513987069111489817?t=1).
+
 ## Project Overview
 
 This project aims to convert traditional text novels into playable visual novels with the help of AI large models. The system parses novel text, extracts key information such as characters and scenes, and uses generative image and audio models to produce the corresponding assets. The final output is a script that can run on engines like Ren'Py.
