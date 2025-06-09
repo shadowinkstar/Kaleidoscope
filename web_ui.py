@@ -189,10 +189,10 @@ def pipeline(
         save_progress(label, progress)
         yield zh_en(
             f"脚本与人物生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}。\n"
-            "请记录标签为 `{label}`，它是本次生成的标签，如果出现错误可在“重启标签”输入框中使用，点击按钮重新生成。\n"
+            f"请记录标签为 `{label}`，它是本次生成的标签，如果出现错误可在“重启标签”输入框中使用，点击按钮重新生成。\n"
             "如果生成结束，可以在上方OutPuts Tab栏中查看对应的生成结果。",
             f"Scripts and characters generated in {time.time() - start_time:.2f}s, saved to {base_dir}.\n"
-            "Please record the label as `{label}`, it is the label of this generation, if there is an error, you can use it in the Resume input box to regenerate."
+            f"Please record the label as `{label}`, it is the label of this generation, if there is an error, you can use it in the Resume input box to regenerate."
             "If generation is complete, you can view the corresponding generation results in the OutPuts Tab.",
         )
 
@@ -450,7 +450,11 @@ def build_interface() -> gr.Blocks:
                     event(show_file, explorer, [text_view, image_view, audio_view])
                 else:
                     explorer.change(show_file, explorer, [text_view, image_view, audio_view])
-                refresh_btn.click(lambda: gr.FileExplorer.update(root_dir="outputs"), None, explorer)
+                refresh_btn.click(
+                    lambda: explorer.update(root_dir="outputs"),  # refresh listing
+                    None,
+                    explorer,
+                )
                 with gr.Row():
                     renpy_path = gr.Textbox(label=LANG_CONTENT["en"]["renpy_path"])
                     label_box = gr.Textbox(label=LANG_CONTENT["en"]["output_label"])
