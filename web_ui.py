@@ -107,11 +107,24 @@ Install Ren'Py -> Create Project -> Open game folder -> Copy assets -> Launch
     },
 }
 
+
 load_dotenv()
 
-def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_server: str, resume_label: str = "") -> Iterable[str]:
+def zh_en(zh: str, en: str) -> dict:
+    """Helper to create bilingual messages."""
+    return {"zh": zh, "en": en}
+
+
+def pipeline(
+    file: Path,
+    base_url: str,
+    api_key: str,
+    model_name: str,
+    comfy_server: str,
+    resume_label: str = "",
+) -> Iterable[dict]:
     if file is None and not resume_label:
-        yield "请上传小说文件"
+        yield zh_en("请上传小说文件", "Please upload a novel file")
         return
 
     if api_key == "":
@@ -138,15 +151,18 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
         label = resume_label
         base_dir = Path("outputs") / label
         if not base_dir.exists():
-            yield "指定标签不存在"
+            yield zh_en("指定标签不存在", "Specified label does not exist")
             return
         progress = load_progress(label)
     else:
-        yield "开始解析文档..."
+        yield zh_en("开始解析文档...", "Starting document parsing...")
         chapters = split_chapter(parse_novel_txt(path=file))
-        yield f"共识别到 {len(chapters)} 个章节，共 {sum([len(c.chunks) for c in chapters])} 片段"
+        yield zh_en(
+            f"共识别到 {len(chapters)} 个章节，共 {sum([len(c.chunks) for c in chapters])} 片段",
+            f"Detected {len(chapters)} chapters, {sum([len(c.chunks) for c in chapters])} segments",
+        )
 
-        yield "开始生成人物信息与脚本..."
+        yield zh_en("开始生成人物信息与脚本...", "Generating character info and scripts...")
         start_time = time.time()
         result = ""
         person_list: list[Person] = []
@@ -156,7 +172,7 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
                 person_list = generate_person(chunk, llm, person_list)
                 script = generate_script(chunk, llm, person_list, previous_script=result)
                 result += script + "\n"
-                yield f"- 已生成{script[:20]}等内容"
+                yield zh_en(f"- 已生成第{chapters.index(chapter) + 1}章节第{chapter.chunks.index(chunk) + 1}片段内容", f"- Generated Chapter {chapters.index(chapter) + 1} Segmet {chapter.chunks.index(chunk) + 1}")
 
         date = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         label = Path(file.name).stem + f"_{date}"
@@ -171,10 +187,13 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
         )
         progress = {"step": "images", "image_index": 0, "scene_index": 0, "music_index": 0}
         save_progress(label, progress)
-        yield (
+        yield zh_en(
             f"脚本与人物生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}。\n"
-            f"记录标签为 {label}，它是本次生成的标签，如果出现错误可在“重启标签”输入框中使用，点击按钮重新生成。\n"
-            f"如果生成结束，可以在上方OutPuts Tab栏中查看对应的生成结果。"
+            "请记录标签为 `{label}`，它是本次生成的标签，如果出现错误可在“重启标签”输入框中使用，点击按钮重新生成。\n"
+            "如果生成结束，可以在上方OutPuts Tab栏中查看对应的生成结果。",
+            f"Scripts and characters generated in {time.time() - start_time:.2f}s, saved to {base_dir}.\n"
+            "Please record the label as `{label}`, it is the label of this generation, if there is an error, you can use it in the Resume input box to regenerate."
+            "If generation is complete, you can view the corresponding generation results in the OutPuts Tab.",
         )
 
     script_path = Path("outputs") / label / "script.txt"
@@ -185,10 +204,13 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
         f.write(json.dumps(info.persons, ensure_ascii=False, indent=4))
 
     if progress.get("step") == "images":
-        yield "生成人物立绘..."
+        yield zh_en("生成人物立绘...", "Generating character portraits...")
         person_num = len(info.persons)
         labels = sum(len(p["labels"]) for p in info.persons)
-        yield f"角色共 {person_num} 个，标签共 {labels} 个，共计 {person_num + labels} 张图片，预计用时{(person_num + labels) * 20}秒"
+        yield zh_en(
+            f"角色共 {person_num} 个，标签共 {labels} 个，共计 {person_num + labels} 张图片，预计用时{(person_num + labels) * 20}秒",
+            f"{person_num} characters with {labels} labels, {person_num + labels} images total, estimated {(person_num + labels) * 20} seconds",
+        )
         start_time = time.time()
         image_generator_agent(
             llm,
@@ -200,12 +222,18 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
         )
         progress["step"] = "scenes"
         save_progress(label, progress)
-        yield f"人物立绘生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}/images/"
+        yield zh_en(
+            f"人物立绘生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}/images/",
+            f"Character portraits completed in {time.time() - start_time:.2f}s, saved to {base_dir}/images/",
+        )
 
     if progress.get("step") == "scenes":
-        yield "生成场景图..."
+        yield zh_en("生成场景图...", "Generating scene images...")
         scene_num = len(info.scenes)
-        yield f"场景共 {scene_num} 个，共 {scene_num} 张图片，预计用时{scene_num * 25}秒"
+        yield zh_en(
+            f"场景共 {scene_num} 个，共 {scene_num} 张图片，预计用时{scene_num * 25}秒",
+            f"{scene_num} scenes, {scene_num} images, estimated {scene_num * 25} seconds",
+        )
         start_time = time.time()
         scene_generator_agent(
             llm,
@@ -217,12 +245,18 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
         )
         progress["step"] = "music"
         save_progress(label, progress)
-        yield f"场景图生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}/images/"
+        yield zh_en(
+            f"场景图生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}/images/",
+            f"Scene images completed in {time.time() - start_time:.2f}s, saved to {base_dir}/images/",
+        )
 
     if progress.get("step") == "music":
-        yield "生成音乐..."
+        yield zh_en("生成音乐...", "Generating music...")
         music_num = len(info.music)
-        yield f"音乐共 {music_num} 个，共 {music_num} 个音乐文件，预计用时{music_num * 15}秒"
+        yield zh_en(
+            f"音乐共 {music_num} 个，共 {music_num} 个音乐文件，预计用时{music_num * 15}秒",
+            f"{music_num} music pieces, {music_num} files, estimated {music_num * 15} seconds",
+        )
         start_time = time.time()
         music_gen(
             info.music,
@@ -233,14 +267,21 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
         )
         progress["step"] = "done"
         save_progress(label, progress)
-        yield f"音乐生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}/audio/"
+        yield zh_en(
+            f"音乐生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}/audio/",
+            f"Music generation completed in {time.time() - start_time:.2f}s, saved to {base_dir}/audio/",
+        )
 
     output_path = convert_script(script_path)
     tag_by_dialogue(output_path, output_path)
     concat(output_path, Path("head.rpy"), output_path)
-    yield (
-        f"全部完成，标签 {label}，如需继续或查看输出，请在“重启标签”输入框填写该标签。"
-        f"最终脚本文件结果保存在 outputs/{label}/script.rpy"
+    yield zh_en(
+        f"全部完成，标签 {label}，如需继续或查看输出，请在“重启标签”输入框填写该标签。",
+        f"All done, label {label}. Use it in the Resume box to continue or view outputs.",
+    )
+    yield zh_en(
+        f"最终脚本文件结果保存在 outputs/{label}/script.rpy",
+        f"Final script saved to outputs/{label}/script.rpy",
     )
 
 
@@ -253,14 +294,17 @@ def ui_process(
     comfy_server,
     history: list[dict],
     log_pos: int,
+    lang: str,
+    raw_history: list[dict],
 ):
     """执行主流程并将输出追加到聊天记录中，并同步日志."""
 
-    for message in pipeline(file, base_url, api_key, model_name, comfy_server, resume):
-        history.append({"role": "assistant", "content": message})
+    for msg_pair in pipeline(file, base_url, api_key, model_name, comfy_server, resume):
+        raw_history.append(msg_pair)
+        history.append({"role": "assistant", "content": msg_pair.get(lang, msg_pair.get("zh"))})
         logs = get_logs(log_pos)
         log_pos += len(logs)
-        yield history, "\n".join(logs), log_pos
+        yield history, "\n".join(logs), log_pos, raw_history
 
 
 def show_file(path: str | list[str] | dict):
@@ -352,6 +396,7 @@ def build_interface() -> gr.Blocks:
 
     with gr.Blocks(title="Kaleidoscope", theme=theme, css=CUSTOM_CSS) as demo:
         lang_state = gr.State("en")
+        raw_history = gr.State([])
         with gr.Row():
             toggle_btn = gr.Button(LANG_CONTENT["en"]["toggle"], elem_id="toggle-btn")
         with gr.Tabs() as tabs:
@@ -388,12 +433,14 @@ def build_interface() -> gr.Blocks:
             with gr.TabItem(LANG_CONTENT["en"]["outputs"]):
                 renpy_md = gr.Markdown(LANG_CONTENT["en"]["renpy_info"])
                 with gr.Row():
-                    explorer = gr.FileExplorer(
-                        root_dir="outputs",
-                        height=400,
-                        file_count="single",
-                        elem_id="output-explorer",
-                    )
+                    with gr.Column():
+                        explorer = gr.FileExplorer(
+                            root_dir="outputs",
+                            height=400,
+                            file_count="single",
+                            elem_id="output-explorer",
+                        )
+                        refresh_btn = gr.Button("Refresh")
                     with gr.Column():
                         text_view = gr.Textbox(label="Text", lines=20, interactive=False, visible=False)
                         image_view = gr.Image(label="Image", visible=False)
@@ -403,6 +450,7 @@ def build_interface() -> gr.Blocks:
                     event(show_file, explorer, [text_view, image_view, audio_view])
                 else:
                     explorer.change(show_file, explorer, [text_view, image_view, audio_view])
+                refresh_btn.click(lambda: gr.FileExplorer.update(root_dir="outputs"), None, explorer)
                 with gr.Row():
                     renpy_path = gr.Textbox(label=LANG_CONTENT["en"]["renpy_path"])
                     label_box = gr.Textbox(label=LANG_CONTENT["en"]["output_label"])
@@ -410,9 +458,13 @@ def build_interface() -> gr.Blocks:
                 copy_msg = gr.Textbox(interactive=False)
                 copy_btn.click(copy_and_launch, [renpy_path, label_box], copy_msg)
 
-        def toggle_language(current_lang):
+        def toggle_language(current_lang, history_raw):
             new_lang = "zh" if current_lang == "en" else "en"
             content = LANG_CONTENT[new_lang]
+            translated = [
+                {"role": "assistant", "content": msg_pair.get(new_lang, msg_pair.get("zh"))}
+                for msg_pair in history_raw
+            ]
             return (
                 new_lang,
                 gr.update(value=content["intro"]),
@@ -429,11 +481,12 @@ def build_interface() -> gr.Blocks:
                 gr.update(label=content["renpy_path"]),
                 gr.update(label=content["output_label"]),
                 gr.update(value=content["copy_btn"]),
+                translated,
             )
 
         toggle_btn.click(
             toggle_language,
-            [lang_state],
+            [lang_state, raw_history],
             [
                 lang_state,
                 intro,
@@ -450,13 +503,14 @@ def build_interface() -> gr.Blocks:
                 renpy_path,
                 label_box,
                 copy_btn,
+                chatbot,
             ],
         )
 
         run_btn.click(
             ui_process,
-            [file, resume, base_url, api_key, model_name, comfy_server, chatbot, log_state],
-            [chatbot, log_box, log_state],
+            [file, resume, base_url, api_key, model_name, comfy_server, chatbot, log_state, lang_state, raw_history],
+            [chatbot, log_box, log_state, raw_history],
         )
     return demo
 def main():
