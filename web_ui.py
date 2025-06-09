@@ -259,8 +259,10 @@ def ui_process(
         yield history, "\n".join(logs), log_pos
 
 
-def show_file(path: str | list[str]):
+def show_file(path: str | list[str] | dict):
     """Show different file types based on extension."""
+    if isinstance(path, dict):
+        path = path.get("path") if path else ""
     if isinstance(path, list):
         if not path:
             path = ""
@@ -336,12 +338,6 @@ CUSTOM_CSS = """
 /* 其他角色（system / tool / function）可继续加 */
 #toggle-btn {
     margin-left: auto;
-}
-#output-explorer input[type="checkbox"] {
-    display: none;
-}
-#output-explorer .selected {
-    background-color: #dbeafe !important;
 }
 """
 
