@@ -55,12 +55,8 @@ LANG_CONTENT = {
 4. Copy generated scripts, images and audio into the `game` directory.
 5. Start the project with the launcher.
 
-```mermaid
-graph TD
-    A[Install Ren'Py] --> B[Create Project]
-    B --> C[Open game folder]
-    C --> D[Copy assets]
-    D --> E[Launch]
+```
+Install Ren'Py -> Create Project -> Open game folder -> Copy assets -> Launch
 ```
 """,
         "renpy_path": "Ren'Py project path",
@@ -98,12 +94,8 @@ graph TD
 4. 将生成的脚本、图片、音频复制到 `game` 目录。
 5. 重新启动项目即可查看效果。
 
-```mermaid
-graph TD
-    A[安装 Ren'Py] --> B[创建项目]
-    B --> C[打开 game 目录]
-    C --> D[复制素材]
-    D --> E[启动项目]
+```
+安装 Ren'Py -> 创建项目 -> 打开 game 目录 -> 复制素材 -> 启动项目
 ```
 """,
         "renpy_path": "Ren'Py 项目路径",
@@ -310,6 +302,9 @@ CUSTOM_CSS = """
     color: white !important;
 }
 /* 其他角色（system / tool / function）可继续加 */
+#toggle-btn {
+    margin-left: auto;
+}
 """
 
 def build_interface() -> gr.Blocks:
@@ -321,10 +316,11 @@ def build_interface() -> gr.Blocks:
 
     with gr.Blocks(title="Kaleidoscope", theme=theme, css=CUSTOM_CSS) as demo:
         lang_state = gr.State("en")
+        with gr.Row():
+            toggle_btn = gr.Button(LANG_CONTENT["en"]["toggle"], elem_id="toggle-btn")
         with gr.Tabs() as tabs:
             with gr.TabItem("Main"):
                 intro = gr.HTML(LANG_CONTENT["en"]["intro"])
-                toggle_btn = gr.Button(LANG_CONTENT["en"]["toggle"])
 
                 with gr.Accordion(LANG_CONTENT["en"]["settings"], open=False) as cfg:
                     base_url = gr.Textbox(
