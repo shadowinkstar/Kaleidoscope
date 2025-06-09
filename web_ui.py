@@ -1,4 +1,4 @@
-import json, time
+import json, time, shutil, subprocess
 import gradio as gr
 from pathlib import Path
 from datetime import datetime
@@ -46,6 +46,26 @@ LANG_CONTENT = {
         "model_name": "Model Name",
         "comfy_server": "ComfyUI Server",
         "outputs": "Outputs",
+        "renpy_title": "Ren'Py Guide",
+        "renpy_info": """\
+### Install & Create Project
+1. Download [Ren'Py](https://www.renpy.org/latest.html) for Windows or Linux and extract it.
+2. Run `renpy.exe` on Windows or `./renpy.sh` on Linux.
+3. Create a new project from the launcher and remember the folder.
+4. Copy generated scripts, images and audio into the `game` directory.
+5. Start the project with the launcher.
+
+```mermaid
+graph TD
+    A[Install Ren'Py] --> B[Create Project]
+    B --> C[Open game folder]
+    C --> D[Copy assets]
+    D --> E[Launch]
+```
+""",
+        "renpy_path": "Ren'Py project path",
+        "output_label": "Generation label",
+        "copy_btn": "Copy & Launch",
         "toggle": "切换到中文",
     },
     "zh": {
@@ -69,6 +89,26 @@ LANG_CONTENT = {
         "model_name": "模型名称",
         "comfy_server": "ComfyUI 地址",
         "outputs": "查看结果",
+        "renpy_title": "Ren'Py 使用说明",
+        "renpy_info": """\
+### 安装与新建项目
+1. 从 [Ren'Py 官网](https://www.renpy.org/latest.html) 下载对应系统版本并解压。
+2. Windows 运行 `renpy.exe`，Linux 执行 `./renpy.sh`。
+3. 在启动器中新建项目，记录项目目录。
+4. 将生成的脚本、图片、音频复制到 `game` 目录。
+5. 重新启动项目即可查看效果。
+
+```mermaid
+graph TD
+    A[安装 Ren'Py] --> B[创建项目]
+    B --> C[打开 game 目录]
+    C --> D[复制素材]
+    D --> E[启动项目]
+```
+""",
+        "renpy_path": "Ren'Py 项目路径",
+        "output_label": "生成标签",
+        "copy_btn": "复制并启动",
         "toggle": "Switch to English",
     },
 }
@@ -235,6 +275,31 @@ def show_file(path: str | list[str]):
     )
 
 
+def copy_and_launch(project_path: str, label: str) -> str:
+    """Copy generated assets to a Ren'Py project and try to launch it."""
+    if not project_path or not label:
+        return "missing path or label"
+    src = Path("outputs") / label
+    if not src.exists():
+        return "label not found"
+    dest_game = Path(project_path).expanduser()
+    if (dest_game / "game").exists():
+        dest_game = dest_game / "game"
+    dest_game.mkdir(parents=True, exist_ok=True)
+    if (src / "script.rpy").exists():
+        shutil.copy2(src / "script.rpy", dest_game / "script.rpy")
+    for folder in ("images", "audio"):
+        d = dest_game / folder
+        s = src / folder
+        if s.exists():
+            shutil.copytree(s, d, dirs_exist_ok=True)
+    exe = shutil.which("renpy")
+    if exe:
+        subprocess.Popen([exe, str(dest_game.parent)])
+        return f"Copied to {dest_game} and launched Ren'Py"
+    return f"Copied to {dest_game}. Install Ren'Py to launch."
+
+
 CUSTOM_CSS = """
 #mybot [data-testid="user"] {
     background: #8b5cf6 !important;  /* 用户气泡 */
@@ -287,6 +352,7 @@ def build_interface() -> gr.Blocks:
                 run_btn = gr.Button(LANG_CONTENT["en"]["run"])
 
             with gr.TabItem(LANG_CONTENT["en"]["outputs"]):
+                renpy_md = gr.Markdown(LANG_CONTENT["en"]["renpy_info"])
                 with gr.Row():
                     explorer = gr.FileExplorer(root_dir="outputs", height=400)
                     with gr.Column():
@@ -298,6 +364,12 @@ def build_interface() -> gr.Blocks:
                     explorer,
                     [text_view, image_view, audio_view],
                 )
+                with gr.Row():
+                    renpy_path = gr.Textbox(label=LANG_CONTENT["en"]["renpy_path"])
+                    label_box = gr.Textbox(label=LANG_CONTENT["en"]["output_label"])
+                    copy_btn = gr.Button(LANG_CONTENT["en"]["copy_btn"])
+                copy_msg = gr.Textbox(interactive=False)
+                copy_btn.click(copy_and_launch, [renpy_path, label_box], copy_msg)
 
         def toggle_language(current_lang):
             new_lang = "zh" if current_lang == "en" else "en"
@@ -314,6 +386,10 @@ def build_interface() -> gr.Blocks:
                 gr.update(label=content["comfy_server"]),
                 gr.update(label=content["settings"]),
                 gr.update(value=content["toggle"]),
+                gr.update(value=content["renpy_info"]),
+                gr.update(label=content["renpy_path"]),
+                gr.update(label=content["output_label"]),
+                gr.update(value=content["copy_btn"]),
             )
 
         toggle_btn.click(
@@ -331,6 +407,10 @@ def build_interface() -> gr.Blocks:
                 comfy_server,
                 cfg,
                 toggle_btn,
+                renpy_md,
+                renpy_path,
+                label_box,
+                copy_btn,
             ],
         )
 
