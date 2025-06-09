@@ -19,21 +19,37 @@ def run_comfy_workflow(
     timeout: int = 300
 ) -> Optional[pathlib.Path]:
     # ---------- 1. 加载 ComfyUI API workflow json ----------
+    if server == "https://shadowinkstar--example-comfyui-ui.modal.run":
+        workflow_path = "comfyui_workflows/flux_schnell.json"
     wf: dict = json.loads(pathlib.Path(workflow_path).read_text(encoding="utf-8"))
 
     # ---------- 2. 参数注入（请对照你的workflow结构和id调整） ----------
-    if positive is not None:
-        wf["6"]["inputs"]["text"] = positive         # 正面prompt
-    if negative is not None:
-        wf["7"]["inputs"]["text"] = negative         # 负面prompt
-    if width is not None:
-        wf["5"]["inputs"]["width"] = width           # 分辨率
-    if height is not None:
-        wf["5"]["inputs"]["height"] = height
-    if steps is not None:
-        wf["3"]["inputs"]["steps"] = steps           # 步数
-    if seed is not None:
-        wf["3"]["inputs"]["seed"] = seed             # 随机种子
+    if workflow_path == "comfyui_workflows/flux.json":
+        if positive is not None:
+            wf["6"]["inputs"]["text"] = positive         # 正面prompt
+        if negative is not None:
+            wf["7"]["inputs"]["text"] = negative         # 负面prompt
+        if width is not None:
+            wf["5"]["inputs"]["width"] = width           # 分辨率
+        if height is not None:
+            wf["5"]["inputs"]["height"] = height
+        if steps is not None:
+            wf["3"]["inputs"]["steps"] = steps           # 步数
+        if seed is not None:
+            wf["3"]["inputs"]["seed"] = seed             # 随机种子
+    elif workflow_path == "comfyui_workflows/flux_schnell.json":
+        if positive is not None:
+            wf["6"]["inputs"]["text"] = positive         # 正面prompt
+        if negative is not None:
+            wf["33"]["inputs"]["text"] = negative         # 负面prompt
+        if width is not None:
+            wf["27"]["inputs"]["width"] = width           # 分辨率
+        if height is not None:
+            wf["27"]["inputs"]["height"] = height
+        if steps is not None:
+            wf["31"]["inputs"]["steps"] = steps           # 步数
+        if seed is not None:
+            wf["31"]["inputs"]["seed"] = seed             # 随机种子
 
     # ---------- 3. 提交到 /prompt ----------
     client_id = str(uuid.uuid4())
@@ -145,6 +161,8 @@ def run_img2img_workflow(
     """
     
     # ---------- 1. 加载 ComfyUI API workflow json ----------
+    if server == "https://shadowinkstar--example-comfyui-ui.modal.run":
+        workflow_path = "comfyui_workflows/flux_schnell_img2img.jsonimg2img.json"
     wf: dict = json.loads(pathlib.Path(workflow_path).read_text(encoding="utf-8"))
 
     # ---------- 2. 参数注入（根据提供的JSON结构调整） ----------

@@ -366,6 +366,7 @@ def extract_info_from_script(script_path: Path, person_path: Path, script: str =
 
 # 调用大模型生成人物立绘文生图的提示词然后调用文生图工具并查看生成图像进行图生图优化
 def image_generator_agent(
+    llm: ChatOpenAI,
     persons: List[dict],
     prefix: str,
     server: str = "http://127.0.0.1:8188",
@@ -467,6 +468,7 @@ def image_generator_agent(
 
 # 调用大模型生成场景图片，采用1280x720分辨率生成背景
 def scene_generator_agent(
+    llm: ChatOpenAI,
     scenes: List[str],
     prefix: str,
     server: str = "http://127.0.0.1:8188",

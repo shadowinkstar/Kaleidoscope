@@ -4,7 +4,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Iterable
 
-
+from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 
 from base import (
@@ -105,19 +105,32 @@ Install Ren'Py -> Create Project -> Open game folder -> Copy assets -> Launch
     },
 }
 
+load_dotenv()
+
 def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_server: str, resume_label: str = "") -> Iterable[str]:
     if file is None and not resume_label:
         yield "请上传小说文件"
         return
 
-    llm = ChatOpenAI(
-        base_url=base_url,
-        api_key=api_key,
-        model=model_name,
-        max_retries=2,
-        temperature=0.0,
-        max_completion_tokens=8192,
-    )
+    if api_key is "":
+        llm = ChatOpenAI(
+            base_url=base_url,
+            model=model_name,
+            max_retries=2,
+            temperature=0.0,
+            max_completion_tokens=8192,
+            extra_body={"enable_thinking": False}
+        )
+    else:
+        llm = ChatOpenAI(
+            base_url=base_url,
+            api_key=api_key,
+            model=model_name,
+            max_retries=2,
+            temperature=0.0,
+            max_completion_tokens=8192,
+            extra_body={"enable_thinking": False}
+        )
 
     if resume_label:
         label = resume_label
@@ -172,6 +185,7 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
         yield f"角色共 {person_num} 个，标签共 {labels} 个，共计 {person_num + labels} 张图片，预计用时{(person_num + labels) * 20}秒"
         start_time = time.time()
         image_generator_agent(
+            llm,
             info.persons,
             prefix=label,
             server=comfy_server,
@@ -188,6 +202,7 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
         yield f"场景共 {scene_num} 个，共 {scene_num} 张图片，预计用时{scene_num * 25}秒"
         start_time = time.time()
         scene_generator_agent(
+            llm,
             info.scenes,
             prefix=label,
             server=comfy_server,
@@ -343,7 +358,7 @@ def build_interface() -> gr.Blocks:
                     )
                     comfy_server = gr.Textbox(
                         label=LANG_CONTENT["en"]["comfy_server"],
-                        value="http://127.0.0.1:8188",
+                        value="https://shadowinkstar--example-comfyui-ui.modal.run",
                     )
 
                 chatbot = gr.Chatbot(
