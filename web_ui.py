@@ -305,6 +305,12 @@ CUSTOM_CSS = """
 #toggle-btn {
     margin-left: auto;
 }
+#output-explorer input[type="checkbox"] {
+    display: none;
+}
+#output-explorer .selected {
+    background-color: #dbeafe !important;
+}
 """
 
 def build_interface() -> gr.Blocks:
@@ -350,7 +356,12 @@ def build_interface() -> gr.Blocks:
             with gr.TabItem(LANG_CONTENT["en"]["outputs"]):
                 renpy_md = gr.Markdown(LANG_CONTENT["en"]["renpy_info"])
                 with gr.Row():
-                    explorer = gr.FileExplorer(root_dir="outputs", height=400)
+                    explorer = gr.FileExplorer(
+                        root_dir="outputs",
+                        height=400,
+                        file_count="single",
+                        elem_id="output-explorer",
+                    )
                     with gr.Column():
                         text_view = gr.Textbox(label="Text", lines=20, interactive=False, visible=False)
                         image_view = gr.Image(label="Image", visible=False)
