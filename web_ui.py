@@ -259,8 +259,10 @@ def ui_process(
         yield history, "\n".join(logs), log_pos
 
 
-def show_file(path: str | list[str]):
+def show_file(path: str | list[str] | dict):
     """Show different file types based on extension."""
+    if isinstance(path, dict):
+        path = path.get("path") if path else ""
     if isinstance(path, list):
         if not path:
             path = ""
@@ -398,11 +400,11 @@ def build_interface() -> gr.Blocks:
                         text_view = gr.Textbox(label="Text", lines=20, interactive=False, visible=False)
                         image_view = gr.Image(label="Image", visible=False)
                         audio_view = gr.Audio(label="Audio", interactive=False, visible=False)
-                explorer.change(
-                    show_file,
-                    explorer,
-                    [text_view, image_view, audio_view],
-                )
+                event = getattr(explorer, "select", None)
+                if callable(event):
+                    event(show_file, explorer, [text_view, image_view, audio_view])
+                else:
+                    explorer.change(show_file, explorer, [text_view, image_view, audio_view])
                 with gr.Row():
                     renpy_path = gr.Textbox(label=LANG_CONTENT["en"]["renpy_path"])
                     label_box = gr.Textbox(label=LANG_CONTENT["en"]["output_label"])
