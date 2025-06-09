@@ -156,7 +156,10 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
         )
         progress = {"step": "images", "image_index": 0, "scene_index": 0, "music_index": 0}
         save_progress(label, progress)
-        yield f"脚本与人物生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}"
+        yield (
+            f"脚本与人物生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}。"
+            f"记录标签为 {label}，可在“重启标签”输入框中使用"
+        )
 
     script_path = Path("outputs") / label / "script.txt"
     person_path = Path("outputs") / label / "person.json"
@@ -214,7 +217,10 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
     output_path = convert_script(script_path)
     tag_by_dialogue(output_path, output_path)
     concat(output_path, Path("head.rpy"), output_path)
-    yield f"全部完成，最终脚本文件结果保存在 outputs/{label}/script.rpy"
+    yield (
+        f"全部完成，标签 {label}，如需继续或查看输出，请在“重启标签”输入框填写该标签。"
+        f"最终脚本文件结果保存在 outputs/{label}/script.rpy"
+    )
 
 
 def ui_process(
@@ -305,6 +311,12 @@ CUSTOM_CSS = """
 #toggle-btn {
     margin-left: auto;
 }
+#output-explorer input[type="checkbox"] {
+    display: none;
+}
+#output-explorer .selected {
+    background-color: #dbeafe !important;
+}
 """
 
 def build_interface() -> gr.Blocks:
@@ -350,7 +362,12 @@ def build_interface() -> gr.Blocks:
             with gr.TabItem(LANG_CONTENT["en"]["outputs"]):
                 renpy_md = gr.Markdown(LANG_CONTENT["en"]["renpy_info"])
                 with gr.Row():
-                    explorer = gr.FileExplorer(root_dir="outputs", height=400)
+                    explorer = gr.FileExplorer(
+                        root_dir="outputs",
+                        height=400,
+                        file_count="single",
+                        elem_id="output-explorer",
+                    )
                     with gr.Column():
                         text_view = gr.Textbox(label="Text", lines=20, interactive=False, visible=False)
                         image_view = gr.Image(label="Image", visible=False)
