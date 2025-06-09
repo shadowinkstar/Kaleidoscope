@@ -156,7 +156,10 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
         )
         progress = {"step": "images", "image_index": 0, "scene_index": 0, "music_index": 0}
         save_progress(label, progress)
-        yield f"脚本与人物生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}"
+        yield (
+            f"脚本与人物生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}。"
+            f"记录标签为 {label}，可在“重启标签”输入框中使用"
+        )
 
     script_path = Path("outputs") / label / "script.txt"
     person_path = Path("outputs") / label / "person.json"
@@ -214,7 +217,10 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
     output_path = convert_script(script_path)
     tag_by_dialogue(output_path, output_path)
     concat(output_path, Path("head.rpy"), output_path)
-    yield f"全部完成，最终脚本文件结果保存在 outputs/{label}/script.rpy"
+    yield (
+        f"全部完成，标签 {label}，如需继续或查看输出，请在“重启标签”输入框填写该标签。"
+        f"最终脚本文件结果保存在 outputs/{label}/script.rpy"
+    )
 
 
 def ui_process(
