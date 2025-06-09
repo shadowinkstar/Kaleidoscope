@@ -339,12 +339,6 @@ CUSTOM_CSS = """
 #toggle-btn {
     margin-left: auto;
 }
-#output-explorer input[type="checkbox"] {
-    display: none;
-}
-#output-explorer .selected {
-    background-color: #dbeafe !important;
-}
 """
 
 def build_interface() -> gr.Blocks:
@@ -400,11 +394,11 @@ def build_interface() -> gr.Blocks:
                         text_view = gr.Textbox(label="Text", lines=20, interactive=False, visible=False)
                         image_view = gr.Image(label="Image", visible=False)
                         audio_view = gr.Audio(label="Audio", interactive=False, visible=False)
-                event = getattr(explorer, "select", None)
-                if callable(event):
-                    event(show_file, explorer, [text_view, image_view, audio_view])
-                else:
-                    explorer.change(show_file, explorer, [text_view, image_view, audio_view])
+                explorer.change(
+                    show_file,
+                    explorer,
+                    [text_view, image_view, audio_view],
+                )
                 with gr.Row():
                     renpy_path = gr.Textbox(label=LANG_CONTENT["en"]["renpy_path"])
                     label_box = gr.Textbox(label=LANG_CONTENT["en"]["output_label"])
