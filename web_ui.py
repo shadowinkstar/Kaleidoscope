@@ -112,7 +112,7 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
         yield "请上传小说文件"
         return
 
-    if api_key is "":
+    if api_key == "":
         llm = ChatOpenAI(
             base_url=base_url,
             model=model_name,
