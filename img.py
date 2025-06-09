@@ -162,7 +162,7 @@ def run_img2img_workflow(
     
     # ---------- 1. 加载 ComfyUI API workflow json ----------
     if server == "https://shadowinkstar--example-comfyui-ui.modal.run":
-        workflow_path = "comfyui_workflows/flux_schnell_img2img.jsonimg2img.json"
+        workflow_path = "comfyui_workflows/flux_schnell_img2img.json"
     wf: dict = json.loads(pathlib.Path(workflow_path).read_text(encoding="utf-8"))
 
     # ---------- 2. 参数注入（根据提供的JSON结构调整） ----------

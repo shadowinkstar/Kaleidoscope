@@ -153,7 +153,7 @@ def parse_novel_txt(path: Optional[Path] = None, context: str = "") -> List[Chap
         _extract_chapters(soup, novel_name)
 
     return chapters_result
-def split_chapter(chapters: List[Chapter], chunk_size: int = 4000, overlap: int = 200) -> List[Chapter]:
+def split_chapter(chapters: List[Chapter], chunk_size: int = 4000, overlap: int = 0) -> List[Chapter]:
     """
     将章节内容切分成Document对象，并返回
     :param chapter: 小说章节对象
@@ -439,7 +439,10 @@ def image_generator_agent(
                     logger.error(f"重新生成提示词失败: {e}")
                     label_result = {"positive": lb, "negative": ""}
             logger.info(f"正在为人物 {person['name']} 标签 {lb} 生成立绘...")
-            label_img_path = run_img2img_workflow(server=server, input_image=str(base_img.resolve()), positive=label_result["positive"], negative=label_result["negative"], prefix=prefix)
+            if server == "https://shadowinkstar--example-comfyui-ui.modal.run":
+                label_img_path = run_comfy_workflow(server=server, prefix=prefix, positive=label_result["positive"], negative=label_result["negative"])
+            else:
+                label_img_path = run_img2img_workflow(server=server, input_image=str(base_img.resolve()), positive=label_result["positive"], negative=label_result["negative"], prefix=prefix)
             if label_img_path:
                 person_label_img_path = images_dir / f"{person['name']} {lb}.png"
                 label_img_path.rename(person_label_img_path)
