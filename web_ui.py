@@ -440,7 +440,7 @@ def build_interface() -> gr.Blocks:
                             file_count="single",
                             elem_id="output-explorer",
                         )
-                        refresh_btn = gr.Button("Refresh")
+                        # Refresh button was removed per feedback
                     with gr.Column():
                         text_view = gr.Textbox(label="Text", lines=20, interactive=False, visible=False)
                         image_view = gr.Image(label="Image", visible=False)
@@ -450,7 +450,6 @@ def build_interface() -> gr.Blocks:
                     event(show_file, explorer, [text_view, image_view, audio_view])
                 else:
                     explorer.change(show_file, explorer, [text_view, image_view, audio_view])
-                refresh_btn.click(lambda: gr.FileExplorer.update(root_dir="outputs"), None, explorer)
                 with gr.Row():
                     renpy_path = gr.Textbox(label=LANG_CONTENT["en"]["renpy_path"])
                     label_box = gr.Textbox(label=LANG_CONTENT["en"]["output_label"])
