@@ -339,12 +339,6 @@ CUSTOM_CSS = """
 #toggle-btn {
     margin-left: auto;
 }
-#output-explorer input[type="checkbox"] {
-    display: none;
-}
-#output-explorer .selected {
-    background-color: #dbeafe !important;
-}
 """
 
 def build_interface() -> gr.Blocks:
