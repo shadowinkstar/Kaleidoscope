@@ -72,20 +72,27 @@ def run_comfy_workflow(
     timeout = 300 
     with console.status("[bold cyan]ComfyUI 正在生成，请稍候…[/]", spinner="dots"):
         while True:
+
             hist = requests.get(f"{server}/history/{prompt_id}", timeout=30).json()
 
             if hist and "error" in hist:
-                console.print("[red][b]ComfyUI /history 报错，流程终止[/b][/red]")
+                msg = "ComfyUI /history 报错，流程终止"
+                console.print(f"[red][b]{msg}[/b][/red]")
+                logger.error(msg)
                 break
 
             if hist and hist[prompt_id]["status"]["status_str"] == "success":
                 outputs  = hist[prompt_id].get("outputs")
                 elapsed  = time.time() - t0        # 计算耗时
-                console.print(f"[green][b]ComfyUI 生成成功！耗时 {elapsed:.1f} 秒[/b][/green]")
+                msg = f"ComfyUI 生成成功！耗时 {elapsed:.1f} 秒"
+                console.print(f"[green][b]{msg}[/b][/green]")
+                logger.info(msg)
                 break
 
             if time.time() - t0 > timeout:
-                console.print("[red]ComfyUI 生成超时[/red]")
+                msg = "ComfyUI 生成超时"
+                console.print(f"[red]{msg}[/red]")
+                logger.error(msg)
                 break
 
             time.sleep(0.5)
@@ -220,24 +227,31 @@ def run_img2img_workflow(
                                     timeout=30).json()
                 if hist:
                     if "error" in hist:
-                        console.print("[red][b]ComfyUI /history 报错，流程终止[/b][/red]")
+                        msg = "ComfyUI /history 报错，流程终止"
+                        console.print(f"[red][b]{msg}[/b][/red]")
+                        logger.error(msg)
                         return None
 
                     if prompt_id in hist and \
                        hist[prompt_id].get("status", {}).get("status_str") == "success":
                         outputs  = hist[prompt_id].get("outputs")
                         elapsed  = time.time() - t0
+                        msg = f"ComfyUI 图生图生成成功！耗时 {elapsed:.1f} 秒"
                         console.print(
-                            f"[green][b]ComfyUI 图生图生成成功！耗时 {elapsed:.1f} 秒[/b][/green]"
+                            f"[green][b]{msg}[/b][/green]"
                         )
+                        logger.info(msg)
                         break
 
                     if time.time() - t0 > timeout:
-                        console.print("[red]ComfyUI 生成超时[/red]")
+                        msg = "ComfyUI 生成超时"
+                        console.print(f"[red]{msg}[/red]")
+                        logger.error(msg)
                         return None
 
                 time.sleep(0.5)       # 轻量 sleep，动画更顺滑
             except Exception as e:
+                logger.warning(f"轮询状态时出错: {e}，继续等待...")
                 console.print(f"[yellow]轮询状态时出错: {e}，继续等待...[/yellow]")
                 time.sleep(0.5)
 
