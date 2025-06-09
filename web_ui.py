@@ -156,7 +156,7 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
                 person_list = generate_person(chunk, llm, person_list)
                 script = generate_script(chunk, llm, person_list, previous_script=result)
                 result += script + "\n"
-                yield script
+                yield f"- 已生成{script[:20]}等内容"
 
         date = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         label = Path(file.name).stem + f"_{date}"
@@ -172,13 +172,17 @@ def pipeline(file: Path, base_url: str, api_key: str, model_name: str, comfy_ser
         progress = {"step": "images", "image_index": 0, "scene_index": 0, "music_index": 0}
         save_progress(label, progress)
         yield (
-            f"脚本与人物生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}。"
-            f"记录标签为 {label}，可在“重启标签”输入框中使用"
+            f"脚本与人物生成完成，用时{time.time() - start_time:.2f}秒，保存在{base_dir}。\n"
+            f"记录标签为 {label}，它是本次生成的标签，如果出现错误可在“重启标签”输入框中使用，点击按钮重新生成。\n"
+            f"如果生成结束，可以在上方OutPuts Tab栏中查看对应的生成结果。"
         )
 
     script_path = Path("outputs") / label / "script.txt"
     person_path = Path("outputs") / label / "person.json"
     info = extract_info_from_script(script_path, person_path)
+    # 把人物信息写进json中
+    with person_path.open("w", encoding="utf-8") as f:
+        f.write(json.dumps(info.persons, ensure_ascii=False, indent=4))
 
     if progress.get("step") == "images":
         yield "生成人物立绘..."
