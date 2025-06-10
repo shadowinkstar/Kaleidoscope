@@ -1,8 +1,9 @@
 # Kaleidoscope
 
-## Video Introduction
-
-For now you can watch the video introduction on [capcut](https://www.capcut.cn/share/7513987069111489817?t=1).
+- 🎥 You can watch the video introduction on [zhihu](https://www.zhihu.com/zvideo/1915566580563157432).
+- 📚 You can see the detailed documentation on [GitHub Pages](https://github.com/shadowinkstar/Kaleidoscope).
+- 🤗 I deploy a demo project on Huggingface Space [Kaleidoscope](https://huggingface.co/spaces/Agents-MCP-Hackathon/Kaleidoscope)
+- 📃 中文文档[README_zh.md](README_zh.md)
 
 ## Project Overview
 
@@ -48,13 +49,13 @@ Before running, you can edit `.env` to configure your API keys and other options
 
 ## How to Run
 
-Taking `base.py` as an example, run the following command to start converting a sample novel:
+Taking `base.py` as an example, edit it and run the following command to start converting a sample novel:
 
 ```bash
 uv run base.py
 ```
 
-The generated script and character information will appear in the `outputs/` directory. If you want to batch-generate images or audio, run `img.py` and `audio.py` respectively, or call them in `base.py` as needed.
+The generated script and character information will appear in the `outputs/` directory. If you want to batch-generate images or audio, run `img.py` and `audio.py` respectively, or call them in `base.py` as needed. But use web_ui.py to launch the interface is more convenient.
 
 ## Launch the Web Interface
 
@@ -65,10 +66,11 @@ uv run web_ui.py
 ```
 
 Within the interface you can upload text or select an example file and fill in model and ComfyUI parameters in the collapsible settings panel.
+Once the generation is complete, the results can be viewed in the "Outputs" tab. And you can use the easy-to-use "Copy" feature to copy the outputs to your Ren'Py project.
 
 ## Resume from Failure
 
-Each run creates a unique **tag** for the output directory (e.g. `example_2024-01-01-12-00-00`). If the generation is interrupted or you want to review previous results, enter this tag in the "Restart tag" field of the interface. The system will continue from the last progress and show the content in the "View results" tab.
+Each run creates a unique **label** for the output directory (e.g. `example_2024-01-01-12-00-00`). If the generation is interrupted or you want to review previous results, enter this label in the "Resume" field of the interface. The system will continue from the last progress and show the content in the "Outputs" tab.
 
 ---
 
