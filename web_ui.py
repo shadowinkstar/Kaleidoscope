@@ -36,6 +36,8 @@ LANG_CONTENT = {
                     <li>Upload XML text split with <code>&lt;chapter&gt;</code> tags.</li>
                     <li>The system parses chapters and generates characters, scenes and music.</li>
                     <li>Scripts can be exported to popular visual novel engines.</li>
+                    <li>The longer the novel, the more tokens the generation process will use. Please be patient.</li>
+                    <li>This project is tested using deepseek-v3-0324.</li>
                 </ul>
             </div>
         """,
@@ -75,6 +77,8 @@ Install Ren'Py -> Create Project -> Open game folder -> Copy assets -> Launch
                     <li>上传带有 <code>&lt;chapter&gt;</code> 标签划分章节的 XML 文本。</li>
                     <li>系统解析章节，生成角色设定、场景图和音乐。</li>
                     <li>最终输出可在视觉小说引擎中使用的脚本。</li>
+                    <li>小说篇幅越长，生成流程使用的token就越多，请耐心等待。</li>
+                    <li>本项目使用deepseek-v3-0324进行测试。</li>
                 </ul>
             </div>
         """,
@@ -127,6 +131,11 @@ def pipeline(
         yield zh_en("请上传小说文件", "Please upload a novel file")
         return
 
+    if base_url == "https://api.studio.nebius.com/v1":
+        yield zh_en("感谢[Nebius](https://studio.nebius.com/)提供的免费大模型服务!", "Thanks for [Nebius](https://studio.nebius.com/) free large model service!")
+    if comfy_server == "https://shadowinkstar--example-comfyui-ui.modal.run":
+        yield zh_en("感谢[Modal](https://modal.com/)提供的免费ComfyUI服务!", "Thanks for [Modal](https://modal.com/) free ComfyUI service!")
+    
     if api_key == "":
         llm = ChatOpenAI(
             base_url=base_url,
@@ -259,6 +268,7 @@ def pipeline(
         )
         start_time = time.time()
         music_gen(
+            llm,
             info.music,
             prefix=label,
             server=comfy_server,

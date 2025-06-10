@@ -522,6 +522,7 @@ def scene_generator_agent(
 
 # 背景音乐生成
 def music_gen(
+    llm: ChatOpenAI,
     musics: List[str],
     prefix: str,
     server: str = "http://127.0.0.1:8188",
