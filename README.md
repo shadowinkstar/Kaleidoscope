@@ -71,7 +71,3 @@ Once the generation is complete, the results can be viewed in the "Outputs" tab.
 ## Resume from Failure
 
 Each run creates a unique **label** for the output directory (e.g. `example_2024-01-01-12-00-00`). If the generation is interrupted or you want to review previous results, enter this label in the "Resume" field of the interface. The system will continue from the last progress and show the content in the "Outputs" tab.
-
----
-
-For the Chinese documentation, see [README_zh.md](README_zh.md).
