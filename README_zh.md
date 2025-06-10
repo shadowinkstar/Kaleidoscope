@@ -1,8 +1,9 @@
 # Kaleidoscope
 
-## 视频介绍
-
-现在你可以从 [知乎](https://www.zhihu.com/zvideo/1915566580563157432) 链接查看视频。
+- 🎥 可以在 [知乎](https://www.zhihu.com/zvideo/1915566580563157432) 查看视频介绍
+- 📚 详细文档见 [GitHub Pages](https://github.com/shadowinkstar/Kaleidoscope)
+- 🤗 Huggingface Space 演示项目 [Kaleidoscope](https://huggingface.co/spaces/Agents-MCP-Hackathon/Kaleidoscope)
+- 📄 English README [README.md](README.md)
 
 ## 项目简介
 
@@ -69,4 +70,6 @@ uv run web_ui.py
 
 ## 失败重启
 
-生成流程中每次运行都会为输出目录创建一个唯一的 **标签**（例如 `example_2024-01-01-12-00-00`）。如果生成过程中断或想再次查看已有结果，可以在界面中的“重启标签”输入框填入该标签，系统将从上次进度继续执行并在“查看结果”标签页展示内容。
+生成流程中每次运行都会为输出目录创建一个唯一的 **标签**（例如 `example_2024-01-01-12-00-00`）。运行结束后，可在界面的 “Outputs” 标签页查看结果。如若生成过程中断，在 “重启标签” 输入框填入该标签并点击按钮即可继续生成。
+
+

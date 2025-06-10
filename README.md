@@ -3,7 +3,7 @@
 - 🎥 You can watch the video introduction on [zhihu](https://www.zhihu.com/zvideo/1915566580563157432).
 - 📚 You can see the detailed documentation on [GitHub Pages](https://github.com/shadowinkstar/Kaleidoscope).
 - 🤗 I deploy a demo project on Huggingface Space [Kaleidoscope](https://huggingface.co/spaces/Agents-MCP-Hackathon/Kaleidoscope)
-- 📃 中文文档[README_zh.md](README_zh.md)
+- 📃 中文文档 [README_zh.md](README_zh.md)
 
 ## Project Overview
 
