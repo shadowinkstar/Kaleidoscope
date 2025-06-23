@@ -10,6 +10,7 @@ from langchain_core.output_parsers import StrOutputParser
 from bs4 import BeautifulSoup
 import time, re, json, base64
 from log_config import logger
+from llm_log import record_llm_io
 from prompt import EXTRACT_PERSON_PROMPT, GENERATE_SCRIPT_PROMPT
 from img import run_comfy_workflow, run_img2img_workflow, remove_background
 from datetime import datetime
@@ -222,14 +223,20 @@ def generate_person(chapter_document: Document, llm: ChatOpenAI, person_list: Li
     """
     prompt = PromptTemplate.from_template(EXTRACT_PERSON_PROMPT)
     # print(prompt.invoke({"text": chapter_document.page_content}))
-    chain = prompt | llm 
+    chain = prompt | llm
     input_person_list = [{"name": person.name, "description": person.description} for person in person_list]
+    input_data = {"text": chapter_document.page_content, "person_list": input_person_list}
+    prompt_text = prompt.invoke(input_data).to_string()
     try:
-        result = extract_json(chain.invoke({"text": chapter_document.page_content, "person_list": input_person_list}))
+        response = chain.invoke(input_data)
+        record_llm_io("generate_person", prompt_text, getattr(response, "content", str(response)))
+        result = extract_json(response)
     except Exception as e:
         logger.warning(f"提取人物出现错误{e}，首先重试一次")
         try:
-            result = extract_json(chain.invoke({"text": chapter_document.page_content, "person_list": input_person_list}))
+            response = chain.invoke(input_data)
+            record_llm_io("generate_person_retry", prompt_text, getattr(response, "content", str(response)))
+            result = extract_json(response)
         except Exception as e:
             logger.warning(f"重试失败，人物生成失败，直接返回[]")
             result = []
@@ -267,7 +274,18 @@ def generate_script(chapter_document: Document, llm: ChatOpenAI, person_list: Li
     """
     prompt = PromptTemplate.from_template(GENERATE_SCRIPT_PROMPT)
     chain = prompt | llm | StrOutputParser()
-    result = chain.invoke({"text": chapter_document.page_content, "person_list": [person.name for person in person_list], "previous_script": previous_script})
+    input_data = {
+        "text": chapter_document.page_content,
+        "person_list": [person.name for person in person_list],
+        "previous_script": previous_script,
+    }
+    prompt_text = prompt.invoke(input_data).to_string()
+    result = chain.invoke(input_data)
+    record_llm_io(
+        "generate_script",
+        prompt_text,
+        result,
+    )
     logger.info(f"{chapter_document.page_content[:10].strip()}...{chapter_document.page_content[-10:].strip()}提取脚本结果：\n{result}")
     return result
 
@@ -400,12 +418,14 @@ def image_generator_agent(
             )
             logger.info(f"正在为人物 {person['name']} 生成提示词...")
             response = llm.invoke([text2img_message])
+            record_llm_io("image_generator_agent", text2img_message.content, getattr(response, "content", str(response)))
             logger.debug(f"人物 {person['name']} 的提示词生成结果：{response.content}")
             try:
                 result = extract_json(response)
             except Exception:
                 logger.info(f"正在为人物 {person['name']} 重新生成提示词...")
                 response = llm.invoke([text2img_message])
+                record_llm_io("image_generator_agent_retry", text2img_message.content, getattr(response, "content", str(response)))
                 try:
                     result = extract_json(response)
                 except Exception as e:
@@ -428,11 +448,13 @@ def image_generator_agent(
                 ]
             )
             response = llm.invoke([text2img_message])
+            record_llm_io("image_generator_agent", text2img_message.content, getattr(response, "content", str(response)))
             logger.debug(f"人物 {person['name']} 标签 {lb} 的提示词生成结果：{response.content}")
             try:
                 label_result = extract_json(response)
             except Exception:
                 response = llm.invoke([text2img_message])
+                record_llm_io("image_generator_agent_retry", text2img_message.content, getattr(response, "content", str(response)))
                 try:
                     label_result = extract_json(response)
                 except Exception as e:
@@ -499,12 +521,14 @@ def scene_generator_agent(
         previous_scene = scene
         logger.info(f"正在为场景 {scene} 生成提示词...")
         response = llm.invoke([text2img_message])
+        record_llm_io("scene_generator_agent", text2img_message.content, getattr(response, "content", str(response)))
         logger.debug(f"场景 {scene} 的提示词生成结果：{response.content}")
         try:
             result = extract_json(response)
         except:
             logger.warning(f"场景 {scene} 的提示词生成结果解析失败！重新生成...")
             response = llm.invoke([text2img_message])
+            record_llm_io("scene_generator_agent_retry", text2img_message.content, getattr(response, "content", str(response)))
             try:
                 result = extract_json(response)
             except Exception as e:
@@ -543,14 +567,16 @@ def music_gen(
                 请注意这个背景音乐需要在脚本演绎时播放，因此你需要考虑什么样子的音乐适合，我初步考虑是尽量不要有人声的，负面提示词简要描写即可，要求不多。请你使用如下的\
                 JSON格式返回提示词：```json\n{{'positive': '正面提示词，使用逗号分隔的多个句子', 'negative': '负面提示词，使用逗号分隔的多个句子'}}\n```\n，当前脚本章节信息如下{music}"
         response = llm.invoke(prompt)
+        record_llm_io("music_gen", prompt, getattr(response, "content", str(response)))
         logger.debug(f"生成音乐提示词的LLM结果：{response}")
         try:
             result = extract_json(response)
         except:
             logger.warning("LLM返回结果不是有效的JSON格式，重新生成！")
             respomse = llm.invoke(prompt)
+            record_llm_io("music_gen_retry", prompt, getattr(respomse, "content", str(respomse)))
             try:
-                result = extract_json(response)
+                result = extract_json(respomse)
             except Exception as e:
                 logger.error(f"LLM返回结果不是有效的JSON格式：{e}")
                 result = {"positive": "Soft music, Piano, Peaceful", "negative": ""}
